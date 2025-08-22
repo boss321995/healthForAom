@@ -38,17 +38,20 @@ const Dashboard = () => {
       setLoading(true);
       
       // Get auth token
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('healthToken');
+      console.log('🔑 Token found:', token ? 'Yes' : 'No');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       
       // Fetch health summary
       try {
         const summaryResponse = await axios.get('http://localhost:5000/api/health-summary', { headers });
         setHealthSummary(summaryResponse.data);
+        console.log('✅ Health summary loaded:', summaryResponse.data);
       } catch (error) {
-        if (error.response?.status === 403) {
+        console.error('❌ Health summary error:', error.response?.status, error.response?.data);
+        if (error.response?.status === 403 || error.response?.status === 401) {
           // Token expired or invalid, clear auth and redirect
-          localStorage.removeItem('token');
+          localStorage.removeItem('healthToken');
           localStorage.removeItem('user');
           window.location.href = '/';
           return;
@@ -155,7 +158,7 @@ const Dashboard = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('healthToken');
       if (!token) {
         setSubmitMessage({ type: 'error', text: 'กรุณาเข้าสู่ระบบใหม่' });
         setIsSubmitting(false);
@@ -172,8 +175,11 @@ const Dashboard = () => {
 
       const headers = { Authorization: `Bearer ${token}` };
       
+      console.log('📤 Submitting health metrics:', metricsData);
+      
       await axios.post('http://localhost:5000/api/health-metrics', metricsData, { headers });
       
+      console.log('✅ Health metrics submitted successfully');
       setSubmitMessage({ type: 'success', text: 'บันทึกข้อมูลสำเร็จ!' });
       
       // Reset form
@@ -194,7 +200,9 @@ const Dashboard = () => {
       });
       
       // Refresh data
+      console.log('🔄 Refreshing health data...');
       await fetchHealthData();
+      console.log('✅ Health data refreshed');
       
       // Auto switch to overview after 2 seconds
       setTimeout(() => {
@@ -566,16 +574,19 @@ const Dashboard = () => {
 
               {/* Submit Message */}
               {submitMessage.text && (
-                <div className={`mb-6 p-4 rounded-lg border ${
+                <div className={`mb-6 p-4 rounded-lg border animate-fade-in ${
                   submitMessage.type === 'success' 
                     ? 'bg-green-500/20 border-green-500/50 text-green-200' 
                     : 'bg-red-500/20 border-red-500/50 text-red-200'
                 }`}>
                   <div className="flex items-center">
-                    <span className="mr-2">
+                    <span className="mr-2 text-lg">
                       {submitMessage.type === 'success' ? '✅' : '❌'}
                     </span>
-                    {submitMessage.text}
+                    <span className="font-medium">{submitMessage.text}</span>
+                    {submitMessage.type === 'success' && (
+                      <span className="ml-2 text-sm text-green-300">กำลังกลับไปหน้าหลัก...</span>
+                    )}
                   </div>
                 </div>
               )}
