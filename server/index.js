@@ -243,6 +243,31 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
       emergency_contact, emergency_phone
     } = req.body;
 
+    // Data sanitization to prevent undefined values in MySQL
+    const sanitizeValue = (value) => {
+      if (value === undefined || value === '' || value === null || value === 'undefined') {
+        return null;
+      }
+      return value;
+    };
+
+    // Sanitize all profile data
+    const sanitizedData = {
+      first_name: sanitizeValue(first_name),
+      last_name: sanitizeValue(last_name),
+      date_of_birth: sanitizeValue(date_of_birth),
+      gender: sanitizeValue(gender),
+      height_cm: sanitizeValue(height_cm),
+      weight_kg: sanitizeValue(weight_kg),
+      blood_group: sanitizeValue(blood_group),
+      phone: sanitizeValue(phone),
+      emergency_contact: sanitizeValue(emergency_contact),
+      emergency_phone: sanitizeValue(emergency_phone)
+    };
+
+    console.log('📊 Original profile data:', req.body);
+    console.log('📊 Sanitized profile data:', sanitizedData);
+
     // Check if profile exists
     const [existingProfiles] = await db.execute(
       'SELECT profile_id FROM user_profiles WHERE user_id = ?',
@@ -256,9 +281,12 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
          (user_id, first_name, last_name, date_of_birth, gender, height_cm, weight_kg, 
           blood_group, phone, emergency_contact, emergency_phone) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.userId, first_name, last_name, date_of_birth, gender,
-         height_cm, weight_kg, blood_group, phone, emergency_contact, emergency_phone]
+        [req.user.userId, sanitizedData.first_name, sanitizedData.last_name, 
+         sanitizedData.date_of_birth, sanitizedData.gender, sanitizedData.height_cm, 
+         sanitizedData.weight_kg, sanitizedData.blood_group, sanitizedData.phone, 
+         sanitizedData.emergency_contact, sanitizedData.emergency_phone]
       );
+      console.log('✅ New profile created for user:', req.user.userId);
     } else {
       // Update existing profile
       await db.execute(
@@ -267,9 +295,12 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
          height_cm = ?, weight_kg = ?, blood_group = ?, phone = ?,
          emergency_contact = ?, emergency_phone = ?, updated_at = CURRENT_TIMESTAMP
          WHERE user_id = ?`,
-        [first_name, last_name, date_of_birth, gender, height_cm, weight_kg,
-         blood_group, phone, emergency_contact, emergency_phone, req.user.userId]
+        [sanitizedData.first_name, sanitizedData.last_name, sanitizedData.date_of_birth, 
+         sanitizedData.gender, sanitizedData.height_cm, sanitizedData.weight_kg,
+         sanitizedData.blood_group, sanitizedData.phone, sanitizedData.emergency_contact, 
+         sanitizedData.emergency_phone, req.user.userId]
       );
+      console.log('✅ Profile updated for user:', req.user.userId);
     }
 
     res.json({ message: 'Profile updated successfully' });
@@ -321,19 +352,46 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
     const {
       measurement_date, systolic_bp, diastolic_bp, heart_rate,
       blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
-      triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes
+      triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, 
+      weight_kg, notes
     } = req.body;
+
+    // Convert undefined/empty string values to null for MySQL
+    const sanitizeValue = (value) => {
+      if (value === undefined || value === '' || value === null) return null;
+      return value;
+    };
+
+    const sanitizedData = [
+      req.user.userId,
+      sanitizeValue(measurement_date),
+      sanitizeValue(systolic_bp),
+      sanitizeValue(diastolic_bp),
+      sanitizeValue(heart_rate),
+      sanitizeValue(blood_sugar_mg),
+      sanitizeValue(cholesterol_total),
+      sanitizeValue(cholesterol_hdl),
+      sanitizeValue(cholesterol_ldl),
+      sanitizeValue(triglycerides),
+      sanitizeValue(hba1c),
+      sanitizeValue(body_fat_percentage),
+      sanitizeValue(muscle_mass_kg),
+      sanitizeValue(weight_kg),
+      sanitizeValue(notes)
+    ];
+
+    console.log('📊 Sanitized health metrics data:', sanitizedData);
 
     const [result] = await db.execute(
       `INSERT INTO health_metrics 
        (user_id, measurement_date, systolic_bp, diastolic_bp, heart_rate,
         blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
-        triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.userId, measurement_date, systolic_bp, diastolic_bp, heart_rate,
-       blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
-       triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes]
+        triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, weight_kg, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sanitizedData
     );
+
+    console.log('✅ Health metrics inserted with ID:', result.insertId);
 
     res.status(201).json({ 
       message: 'Health metrics added successfully',
@@ -513,16 +571,83 @@ app.post('/api/calculate-bmi', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Height and weight are required' });
     }
 
-    const [result] = await db.execute(
-      'CALL CalculateBMI(?, ?, ?, @bmi, @category)',
-      [req.user.userId, height_cm, weight_kg]
-    );
+    // Calculate BMI manually
+    const heightInMeters = height_cm / 100;
+    const bmi = weight_kg / (heightInMeters * heightInMeters);
+    
+    let category;
+    if (bmi < 18.5) category = 'น้ำหนักน้อย';
+    else if (bmi <= 24.9) category = 'ปกติ';
+    else if (bmi <= 29.9) category = 'น้ำหนักเกิน';
+    else if (bmi <= 34.9) category = 'อ้วนระดับ 1';
+    else if (bmi <= 39.9) category = 'อ้วนระดับ 2';
+    else category = 'อ้วนระดับ 3';
 
-    const [bmiResult] = await db.execute('SELECT @bmi as bmi, @category as category');
-
-    res.json(bmiResult[0]);
+    res.json({ 
+      bmi: parseFloat(bmi.toFixed(2)), 
+      category,
+      height_cm,
+      weight_kg,
+      calculated_at: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Calculate BMI error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get current BMI from profile
+app.get('/api/current-bmi', authenticateToken, async (req, res) => {
+  try {
+    // Get latest weight from health metrics
+    const [latestMetric] = await db.execute(
+      'SELECT weight_kg FROM health_metrics WHERE user_id = ? AND weight_kg IS NOT NULL ORDER BY measurement_date DESC LIMIT 1',
+      [req.user.userId]
+    );
+
+    // Get profile data
+    const [profile] = await db.execute(
+      'SELECT height_cm, weight_kg FROM user_profiles WHERE user_id = ?',
+      [req.user.userId]
+    );
+
+    if (profile.length === 0) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const height_cm = profile[0].height_cm;
+    const weight_kg = latestMetric[0]?.weight_kg || profile[0].weight_kg;
+
+    if (!height_cm || !weight_kg) {
+      return res.json({ 
+        bmi: null, 
+        category: 'ไม่มีข้อมูล',
+        message: 'ต้องการข้อมูลส่วนสูงและน้ำหนัก'
+      });
+    }
+
+    // Calculate BMI
+    const heightInMeters = height_cm / 100;
+    const bmi = weight_kg / (heightInMeters * heightInMeters);
+    
+    let category;
+    if (bmi < 18.5) category = 'น้ำหนักน้อย';
+    else if (bmi <= 24.9) category = 'ปกติ';
+    else if (bmi <= 29.9) category = 'น้ำหนักเกิน';
+    else if (bmi <= 34.9) category = 'อ้วนระดับ 1';
+    else if (bmi <= 39.9) category = 'อ้วนระดับ 2';
+    else category = 'อ้วนระดับ 3';
+
+    res.json({ 
+      bmi: parseFloat(bmi.toFixed(2)), 
+      category,
+      height_cm,
+      weight_kg,
+      weight_source: latestMetric[0]?.weight_kg ? 'latest_metric' : 'profile',
+      calculated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get current BMI error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -891,6 +1016,7 @@ app.get('/api', (req, res) => {
       },
       tools: {
         'POST /api/calculate-bmi': 'Calculate BMI (requires auth)',
+        'GET /api/current-bmi': 'Get current BMI from profile and latest metrics (requires auth)',
         'GET /api/risk-assessment': 'Get risk assessment (requires auth)',
         'GET /api/health-trends': 'Get health trends (requires auth)'
       }

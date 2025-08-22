@@ -14,6 +14,9 @@ class HealthAnalytics {
       const healthHistory = await this.getHealthHistory(userId, timeRange);
       const behaviorHistory = await this.getBehaviorHistory(userId, timeRange);
       
+      console.log('📊 Health history count:', healthHistory.length);
+      console.log('🏃 Behavior history count:', behaviorHistory.length);
+      
       const trends = {
         bmi: this.analyzeBMITrend(healthHistory),
         bloodPressure: this.analyzeBloodPressureTrend(healthHistory),
@@ -21,6 +24,8 @@ class HealthAnalytics {
         lifestyle: this.analyzeLifestyleTrend(behaviorHistory),
         overall: this.calculateOverallHealthScore(healthHistory, behaviorHistory)
       };
+
+      console.log('📈 Generated trends:', trends);
 
       // ใช้ AI ให้คำแนะนำตามแนวโน้ม
       const aiRecommendations = await this.generateTrendRecommendations(trends);
@@ -75,17 +80,16 @@ class HealthAnalytics {
     const query = `
       SELECT 
         record_date,
-        exercise_type,
-        exercise_duration,
-        exercise_intensity,
-        steps_count,
-        calories_burned,
-        sleep_hours,
-        sleep_quality,
-        stress_level,
+        exercise_frequency,
+        exercise_duration_minutes,
         smoking_status,
-        alcohol_consumption,
-        water_intake,
+        cigarettes_per_day,
+        alcohol_frequency,
+        alcohol_units_per_week,
+        sleep_hours_per_night,
+        stress_level,
+        diet_quality,
+        water_intake_liters,
         created_at
       FROM health_behaviors 
       WHERE user_id = ? AND record_date >= ?
@@ -184,19 +188,26 @@ class HealthAnalytics {
 
   // วิเคราะห์แนวโน้มไลฟ์สไตล์
   analyzeLifestyleTrend(behaviorHistory) {
-    if (!behaviorHistory.length) return { trend: 'no_data' };
+    if (!behaviorHistory.length) return { 
+      exercise: { average: '0', recommendation: 'needs_improvement' },
+      sleep: { average: '0', recommendation: 'needs_improvement' },
+      stress: { average: '0', level: 'low' }
+    };
 
-    const avgExercise = behaviorHistory
-      .filter(record => record.exercise_duration)
-      .reduce((sum, record) => sum + record.exercise_duration, 0) / behaviorHistory.length;
+    const exerciseRecords = behaviorHistory.filter(record => record.exercise_duration_minutes);
+    const avgExercise = exerciseRecords.length > 0 
+      ? exerciseRecords.reduce((sum, record) => sum + record.exercise_duration_minutes, 0) / exerciseRecords.length 
+      : 0;
 
-    const avgSleep = behaviorHistory
-      .filter(record => record.sleep_hours)
-      .reduce((sum, record) => sum + record.sleep_hours, 0) / behaviorHistory.length;
+    const sleepRecords = behaviorHistory.filter(record => record.sleep_hours_per_night);
+    const avgSleep = sleepRecords.length > 0
+      ? sleepRecords.reduce((sum, record) => sum + record.sleep_hours_per_night, 0) / sleepRecords.length
+      : 0;
 
-    const avgStress = behaviorHistory
-      .filter(record => record.stress_level)
-      .reduce((sum, record) => sum + this.getStressScore(record.stress_level), 0) / behaviorHistory.length;
+    const stressRecords = behaviorHistory.filter(record => record.stress_level);
+    const avgStress = stressRecords.length > 0
+      ? stressRecords.reduce((sum, record) => sum + this.getStressScore(record.stress_level), 0) / stressRecords.length
+      : 0;
 
     return {
       exercise: {
@@ -264,7 +275,7 @@ class HealthAnalytics {
   identifyRiskFactors(trends) {
     const risks = [];
 
-    if (trends.bmi.trend === 'increasing' && trends.bmi.category === 'อ้วน') {
+    if (trends?.bmi?.trend === 'increasing' && trends?.bmi?.category === 'อ้วน') {
       risks.push({
         type: 'obesity',
         level: 'high',
@@ -272,7 +283,7 @@ class HealthAnalytics {
       });
     }
 
-    if (trends.bloodPressure.riskLevel === 'high') {
+    if (trends?.bloodPressure?.riskLevel === 'high') {
       risks.push({
         type: 'hypertension',
         level: 'high',
@@ -280,11 +291,19 @@ class HealthAnalytics {
       });
     }
 
-    if (trends.bloodSugar.diabetesRisk === 'high') {
+    if (trends?.bloodSugar?.diabetesRisk === 'high') {
       risks.push({
         type: 'diabetes',
         level: 'high',
         description: 'ความเสี่ยงเบาหวานสูง'
+      });
+    }
+
+    if (trends?.lifestyle?.stress?.level === 'high') {
+      risks.push({
+        type: 'stress',
+        level: 'moderate',
+        description: 'ระดับความเครียดสูง'
       });
     }
 
@@ -295,7 +314,7 @@ class HealthAnalytics {
   identifyImprovements(trends) {
     const improvements = [];
 
-    if (trends.bmi.trend === 'decreasing') {
+    if (trends?.bmi?.trend === 'decreasing') {
       improvements.push({
         area: 'weight_management',
         progress: 'good',
@@ -303,11 +322,27 @@ class HealthAnalytics {
       });
     }
 
-    if (trends.lifestyle.exercise.recommendation === 'good') {
+    if (trends?.lifestyle?.exercise?.recommendation === 'good') {
       improvements.push({
         area: 'physical_activity',
         progress: 'excellent',
         description: 'การออกกำลังกายเพียงพอแล้ว'
+      });
+    }
+
+    if (trends?.lifestyle?.sleep?.recommendation === 'good') {
+      improvements.push({
+        area: 'sleep_quality',
+        progress: 'good',
+        description: 'คุณภาพการนอนหลับดีขึ้น'
+      });
+    }
+
+    if (trends?.bloodPressure?.riskLevel === 'low') {
+      improvements.push({
+        area: 'cardiovascular_health',
+        progress: 'excellent',
+        description: 'สุขภาพหัวใจและหลอดเลือดดี'
       });
     }
 
