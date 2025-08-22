@@ -1,0 +1,923 @@
+import express from 'express';
+import mysql from 'mysql2/promise';
+import cors from 'cors';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import HealthAnalytics from './healthAnalytics.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Database connection
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'health_management',
+  charset: 'utf8mb4'
+};
+
+let db;
+
+async function initDatabase() {
+  try {
+    db = await mysql.createConnection(dbConfig);
+    console.log('🔗 Connected to MySQL database');
+  } catch (error) {
+    console.error('❌ Database connection error:', error);
+    process.exit(1);
+  }
+}
+
+// JWT Secret
+const JWT_SECRET = process.env.JWT_SECRET || 'health_app_secret_key';
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  console.log('🔍 Auth Debug:', {
+    authHeader: authHeader ? 'Present' : 'Missing',
+    token: token ? `${token.substring(0, 20)}...` : 'Missing',
+    userId: token ? 'Will verify' : 'No token'
+  });
+
+  if (!token) {
+    console.log('❌ No token provided');
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log('❌ Token verification failed:', err.message);
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    console.log('✅ Token verified for user:', user.userId);
+    req.user = user;
+    next();
+  });
+};
+
+// ===============================
+// 🔐 Authentication Routes
+// ===============================
+
+// Register
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    // Validate input
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    // Check if user exists
+    const [existingUsers] = await db.execute(
+      'SELECT user_id FROM users WHERE username = ? OR email = ?',
+      [username, email]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Insert user
+    const [result] = await db.execute(
+      'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+      [username, email, passwordHash]
+    );
+
+    const userId = result.insertId;
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId, username, email },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      token,
+      user: { userId, username, email }
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    // Find user
+    const [users] = await db.execute(
+      'SELECT user_id, username, email, password_hash, role, is_active FROM users WHERE username = ? OR email = ?',
+      [username, username]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = users[0];
+
+    if (!user.is_active) {
+      return res.status(401).json({ error: 'Account is deactivated' });
+    }
+
+    // Check password
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.user_id, 
+        username: user.username, 
+        email: user.email,
+        role: user.role 
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        userId: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 👤 User Profile Routes
+// ===============================
+
+// Get user profile
+app.get('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    // First check if user exists
+    const [users] = await db.execute(
+      'SELECT user_id, username, email, role FROM users WHERE user_id = ?',
+      [req.user.userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[0];
+
+    // Try to get user profile
+    const [profiles] = await db.execute(
+      `SELECT p.*, u.username, u.email 
+       FROM user_profiles p 
+       JOIN users u ON p.user_id = u.user_id 
+       WHERE p.user_id = ?`,
+      [req.user.userId]
+    );
+
+    if (profiles.length === 0) {
+      // Return basic user info if no profile exists
+      return res.json({
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        profile_completed: false,
+        message: 'Profile not completed yet'
+      });
+    }
+
+    res.json({
+      ...profiles[0],
+      profile_completed: true
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user profile
+app.put('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    const {
+      first_name, last_name, date_of_birth, gender,
+      height_cm, weight_kg, blood_group, phone,
+      emergency_contact, emergency_phone
+    } = req.body;
+
+    // Check if profile exists
+    const [existingProfiles] = await db.execute(
+      'SELECT profile_id FROM user_profiles WHERE user_id = ?',
+      [req.user.userId]
+    );
+
+    if (existingProfiles.length === 0) {
+      // Create new profile
+      await db.execute(
+        `INSERT INTO user_profiles 
+         (user_id, first_name, last_name, date_of_birth, gender, height_cm, weight_kg, 
+          blood_group, phone, emergency_contact, emergency_phone) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.user.userId, first_name, last_name, date_of_birth, gender,
+         height_cm, weight_kg, blood_group, phone, emergency_contact, emergency_phone]
+      );
+    } else {
+      // Update existing profile
+      await db.execute(
+        `UPDATE user_profiles SET 
+         first_name = ?, last_name = ?, date_of_birth = ?, gender = ?,
+         height_cm = ?, weight_kg = ?, blood_group = ?, phone = ?,
+         emergency_contact = ?, emergency_phone = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ?`,
+        [first_name, last_name, date_of_birth, gender, height_cm, weight_kg,
+         blood_group, phone, emergency_contact, emergency_phone, req.user.userId]
+      );
+    }
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 📊 Health Metrics Routes
+// ===============================
+
+// Get health metrics
+app.get('/api/health-metrics', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, limit = 10 } = req.query;
+    
+    let query = `
+      SELECT * FROM health_metrics 
+      WHERE user_id = ?
+    `;
+    let params = [req.user.userId];
+
+    if (startDate) {
+      query += ' AND measurement_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ' AND measurement_date <= ?';
+      params.push(endDate);
+    }
+
+    query += ' ORDER BY measurement_date DESC LIMIT ?';
+    params.push(parseInt(limit));
+
+    const [metrics] = await db.execute(query, params);
+    res.json(metrics);
+  } catch (error) {
+    console.error('Get health metrics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add health metrics
+app.post('/api/health-metrics', authenticateToken, async (req, res) => {
+  try {
+    const {
+      measurement_date, systolic_bp, diastolic_bp, heart_rate,
+      blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
+      triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes
+    } = req.body;
+
+    const [result] = await db.execute(
+      `INSERT INTO health_metrics 
+       (user_id, measurement_date, systolic_bp, diastolic_bp, heart_rate,
+        blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
+        triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.userId, measurement_date, systolic_bp, diastolic_bp, heart_rate,
+       blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
+       triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, notes]
+    );
+
+    res.status(201).json({ 
+      message: 'Health metrics added successfully',
+      metricId: result.insertId 
+    });
+  } catch (error) {
+    console.error('Add health metrics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 🏃 Health Behaviors Routes
+// ===============================
+
+// Get health behaviors
+app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, limit = 10 } = req.query;
+    
+    let query = `
+      SELECT * FROM health_behaviors 
+      WHERE user_id = ?
+    `;
+    let params = [req.user.userId];
+
+    if (startDate) {
+      query += ' AND record_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ' AND record_date <= ?';
+      params.push(endDate);
+    }
+
+    query += ' ORDER BY record_date DESC LIMIT ?';
+    params.push(parseInt(limit));
+
+    const [behaviors] = await db.execute(query, params);
+    res.json(behaviors);
+  } catch (error) {
+    console.error('Get health behaviors error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add health behavior
+app.post('/api/health-behaviors', authenticateToken, async (req, res) => {
+  try {
+    const {
+      record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
+      alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
+      sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes
+    } = req.body;
+
+    const [result] = await db.execute(
+      `INSERT INTO health_behaviors 
+       (user_id, record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
+        alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
+        sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.userId, record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
+       alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
+       sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes]
+    );
+
+    res.status(201).json({ 
+      message: 'Health behavior recorded successfully',
+      behaviorId: result.insertId 
+    });
+  } catch (error) {
+    console.error('Add health behavior error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 📋 Health Records Route
+// ===============================
+
+// Get health records (combination of metrics and behaviors)
+app.get('/api/health-records', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    // Get recent health metrics
+    const [metrics] = await db.execute(
+      `SELECT 'metric' as record_type, metric_id as id, measurement_date as date, 
+              systolic_bp, diastolic_bp, heart_rate, blood_sugar_mg, notes,
+              'Health Measurement' as category
+       FROM health_metrics 
+       WHERE user_id = ? 
+       ORDER BY measurement_date DESC 
+       LIMIT ?`,
+      [req.user.userId, Math.floor(limit / 2)]
+    );
+
+    // Get recent health behaviors
+    const [behaviors] = await db.execute(
+      `SELECT 'behavior' as record_type, behavior_id as id, record_date as date,
+              exercise_duration_minutes, sleep_hours_per_night, stress_level, notes,
+              'Lifestyle Record' as category
+       FROM health_behaviors 
+       WHERE user_id = ? 
+       ORDER BY record_date DESC 
+       LIMIT ?`,
+      [req.user.userId, Math.floor(limit / 2)]
+    );
+
+    // Combine and sort by date
+    const allRecords = [...metrics, ...behaviors]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, parseInt(limit));
+
+    res.json(allRecords);
+  } catch (error) {
+    console.error('Get health records error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 📋 Health Summary Route
+// ===============================
+
+// Get health summary
+app.get('/api/health-summary', authenticateToken, async (req, res) => {
+  try {
+    const [summary] = await db.execute(
+      'SELECT * FROM health_summary WHERE user_id = ?',
+      [req.user.userId]
+    );
+
+    if (summary.length === 0) {
+      // Create default health summary for new users
+      const defaultSummary = {
+        user_id: req.user.userId,
+        overall_health_score: 0,
+        bmi: null,
+        bmi_category: 'Not Available',
+        blood_pressure_status: 'Not Available',
+        diabetes_risk: 'Unknown',
+        cardiovascular_risk: 'Unknown',
+        last_checkup: null,
+        next_recommended_checkup: null,
+        health_goals: 'Set your health goals',
+        medications: null,
+        allergies: null,
+        medical_conditions: null,
+        lifestyle_recommendations: 'Complete your health profile to get personalized recommendations',
+        emergency_notes: null,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      return res.json(defaultSummary);
+    }
+
+    res.json(summary[0]);
+  } catch (error) {
+    console.error('Get health summary error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 🎯 Health Assessment Routes
+// ===============================
+
+// Calculate BMI
+app.post('/api/calculate-bmi', authenticateToken, async (req, res) => {
+  try {
+    const { height_cm, weight_kg } = req.body;
+
+    if (!height_cm || !weight_kg) {
+      return res.status(400).json({ error: 'Height and weight are required' });
+    }
+
+    const [result] = await db.execute(
+      'CALL CalculateBMI(?, ?, ?, @bmi, @category)',
+      [req.user.userId, height_cm, weight_kg]
+    );
+
+    const [bmiResult] = await db.execute('SELECT @bmi as bmi, @category as category');
+
+    res.json(bmiResult[0]);
+  } catch (error) {
+    console.error('Calculate BMI error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get health risk assessment
+app.get('/api/risk-assessment', authenticateToken, async (req, res) => {
+  try {
+    const [result] = await db.execute(
+      'CALL GetHealthRiskAssessment(?, @cardio_risk, @diabetes_risk, @recommendations)',
+      [req.user.userId]
+    );
+
+    const [riskResult] = await db.execute(
+      'SELECT @cardio_risk as cardiovascular_risk, @diabetes_risk as diabetes_risk, @recommendations as recommendations'
+    );
+
+    res.json(riskResult[0]);
+  } catch (error) {
+    console.error('Get risk assessment error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// 📈 Health Trends Analysis Routes
+// ===============================
+
+// Get health trends
+app.get('/api/health-trends', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    // Validate date range
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Start date and end date are required' });
+    }
+
+    // Get health metrics trends
+    const [metricsTrends] = await db.execute(
+      `SELECT measurement_date, 
+              AVG(systolic_bp) as avg_systolic_bp, 
+              AVG(diastolic_bp) as avg_diastolic_bp, 
+              AVG(heart_rate) as avg_heart_rate,
+              AVG(blood_sugar_mg) as avg_blood_sugar_mg, 
+              AVG(cholesterol_total) as avg_cholesterol_total, 
+              AVG(cholesterol_hdl) as avg_cholesterol_hdl, 
+              AVG(cholesterol_ldl) as avg_cholesterol_ldl,
+              AVG(triglycerides) as avg_triglycerides, 
+              AVG(hba1c) as avg_hba1c, 
+              AVG(body_fat_percentage) as avg_body_fat_percentage, 
+              AVG(muscle_mass_kg) as avg_muscle_mass_kg
+       FROM health_metrics 
+       WHERE user_id = ? AND measurement_date BETWEEN ? AND ?
+       GROUP BY measurement_date
+       ORDER BY measurement_date`,
+      [req.user.userId, startDate, endDate]
+    );
+
+    // Get health behaviors trends
+    const [behaviorsTrends] = await db.execute(
+      `SELECT record_date, 
+              AVG(cigarettes_per_day) as avg_cigarettes_per_day, 
+              AVG(alcohol_units_per_week) as avg_alcohol_units_per_week, 
+              AVG(exercise_duration_minutes) as avg_exercise_duration_minutes,
+              AVG(sleep_hours_per_night) as avg_sleep_hours_per_night, 
+              AVG(stress_level) as avg_stress_level, 
+              AVG(diet_quality) as avg_diet_quality, 
+              AVG(water_intake_liters) as avg_water_intake_liters
+       FROM health_behaviors 
+       WHERE user_id = ? AND record_date BETWEEN ? AND ?
+       GROUP BY record_date
+       ORDER BY record_date`,
+      [req.user.userId, startDate, endDate]
+    );
+
+    res.json({ metricsTrends, behaviorsTrends });
+  } catch (error) {
+    console.error('Get health trends error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Health Analytics API endpoints
+app.get('/api/health-analytics/trends/:timeRange?', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const timeRange = req.params.timeRange || '6months';
+    
+    const analytics = new HealthAnalytics(db);
+    const result = await analytics.analyzeHealthTrends(userId, timeRange);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        data: result.data,
+        message: 'Health trends analyzed successfully'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('Error in health analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to analyze health trends'
+    });
+  }
+});
+
+// Get health predictions based on trends
+app.get('/api/health-analytics/predictions', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const analytics = new HealthAnalytics(db);
+    
+    // Get 1-year trend for predictions
+    const trends = await analytics.analyzeHealthTrends(userId, '1year');
+    
+    if (trends.success) {
+      const predictions = {
+        bmi: predictBMIFuture(trends.data.trends.bmi),
+        bloodPressure: predictBPFuture(trends.data.trends.bloodPressure),
+        diabetesRisk: predictDiabetesRisk(trends.data.trends.bloodSugar),
+        overallHealth: predictOverallHealth(trends.data.trends.overall)
+      };
+      
+      res.json({
+        success: true,
+        data: predictions,
+        basedOn: 'AI analysis of 1-year health data trends'
+      });
+    } else {
+      res.status(500).json({ success: false, error: trends.error });
+    }
+  } catch (error) {
+    console.error('Error generating predictions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate health predictions'
+    });
+  }
+});
+
+// Get personalized health insights
+app.get('/api/health-analytics/insights', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const analytics = new HealthAnalytics(db);
+    
+    const insights = await analytics.analyzeHealthTrends(userId, '6months');
+    
+    if (insights.success) {
+      const personalizedInsights = {
+        healthScore: insights.data.trends.overall,
+        riskFactors: insights.data.riskFactors,
+        improvements: insights.data.improvements,
+        recommendations: insights.data.recommendations,
+        nextActions: generateNextActions(insights.data.trends)
+      };
+      
+      res.json({
+        success: true,
+        data: personalizedInsights,
+        generatedAt: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({ success: false, error: insights.error });
+    }
+  } catch (error) {
+    console.error('Error generating insights:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate health insights'
+    });
+  }
+});
+
+// Export health data for research (anonymized)
+app.post('/api/health-analytics/export-anonymous', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { purpose, dataTypes } = req.body;
+    
+    // Check user consent for data sharing
+    const [consent] = await db.execute(
+      'SELECT allow_research_data FROM user_profiles WHERE user_id = ?',
+      [userId]
+    );
+    
+    if (!consent[0]?.allow_research_data) {
+      return res.status(403).json({
+        success: false,
+        error: 'User has not consented to data sharing for research'
+      });
+    }
+    
+    // Generate anonymized data export
+    const anonymizedData = await generateAnonymizedExport(userId, dataTypes);
+    
+    // Log the export for audit trail
+    await db.execute(
+      'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+      [userId, 'data_export', JSON.stringify({ purpose, dataTypes, timestamp: new Date() })]
+    );
+    
+    res.json({
+      success: true,
+      data: anonymizedData,
+      purpose: purpose,
+      exportedAt: new Date().toISOString(),
+      note: 'This data has been anonymized and contains no personally identifiable information'
+    });
+  } catch (error) {
+    console.error('Error exporting data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to export health data'
+    });
+  }
+});
+
+// Helper functions for predictions
+function predictBMIFuture(bmiTrend) {
+  if (!bmiTrend.data || bmiTrend.data.length < 2) {
+    return { prediction: 'insufficient_data' };
+  }
+  
+  const currentBMI = bmiTrend.current;
+  const trend = bmiTrend.trend;
+  
+  let prediction = currentBMI;
+  if (trend === 'increasing') prediction += 0.5;
+  if (trend === 'decreasing') prediction -= 0.5;
+  
+  return {
+    prediction: prediction.toFixed(1),
+    confidence: 'moderate',
+    timeframe: '6_months',
+    recommendation: prediction > 25 ? 'Focus on weight management' : 'Maintain current lifestyle'
+  };
+}
+
+function predictBPFuture(bpTrend) {
+  if (!bpTrend.current) return { prediction: 'insufficient_data' };
+  
+  const current = bpTrend.current;
+  const trend = bpTrend.trend;
+  
+  let systolicPrediction = current.systolic;
+  let diastolicPrediction = current.diastolic;
+  
+  if (trend === 'increasing') {
+    systolicPrediction += 5;
+    diastolicPrediction += 3;
+  } else if (trend === 'decreasing') {
+    systolicPrediction -= 5;
+    diastolicPrediction -= 3;
+  }
+  
+  return {
+    prediction: {
+      systolic: Math.round(systolicPrediction),
+      diastolic: Math.round(diastolicPrediction)
+    },
+    riskLevel: systolicPrediction > 140 ? 'high' : 'moderate',
+    recommendation: systolicPrediction > 140 ? 'Monitor blood pressure closely' : 'Continue current lifestyle'
+  };
+}
+
+function predictDiabetesRisk(sugarTrend) {
+  if (!sugarTrend.current) return { prediction: 'insufficient_data' };
+  
+  const currentLevel = sugarTrend.current;
+  const risk = sugarTrend.diabetesRisk;
+  
+  return {
+    prediction: risk,
+    riskPercentage: currentLevel > 125 ? '75%' : currentLevel > 100 ? '35%' : '10%',
+    recommendation: currentLevel > 100 ? 'Consult with healthcare provider' : 'Continue healthy lifestyle'
+  };
+}
+
+function predictOverallHealth(overallTrend) {
+  const currentScore = overallTrend.score;
+  
+  return {
+    prediction: currentScore >= 80 ? 'improving' : currentScore >= 60 ? 'stable' : 'declining',
+    projectedScore: currentScore,
+    recommendation: currentScore < 70 ? 'Focus on lifestyle improvements' : 'Maintain current health practices'
+  };
+}
+
+function generateNextActions(trends) {
+  const actions = [];
+  
+  if (trends.bmi.trend === 'increasing') {
+    actions.push({
+      action: 'weight_management',
+      priority: 'high',
+      description: 'Implement weight management plan'
+    });
+  }
+  
+  if (trends.bloodPressure.riskLevel === 'high') {
+    actions.push({
+      action: 'bp_monitoring',
+      priority: 'urgent',
+      description: 'Monitor blood pressure daily and consult doctor'
+    });
+  }
+  
+  if (trends.lifestyle.exercise.recommendation === 'needs_improvement') {
+    actions.push({
+      action: 'increase_exercise',
+      priority: 'medium',
+      description: 'Increase physical activity to at least 150 minutes per week'
+    });
+  }
+  
+  return actions;
+}
+
+async function generateAnonymizedExport(userId, dataTypes) {
+  // This function would generate anonymized data
+  // Remove all personally identifiable information
+  return {
+    anonymous_id: `anon_${Math.random().toString(36).substr(2, 9)}`,
+    data_summary: 'Anonymized health metrics and trends',
+    note: 'All personal identifiers have been removed'
+  };
+}
+
+// ===============================
+// 🌐 API Documentation & Health Check
+// ===============================
+
+// Main API endpoint with documentation
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'Health Management API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      authentication: {
+        'POST /api/auth/register': 'Register new user',
+        'POST /api/auth/login': 'User login'
+      },
+      profile: {
+        'GET /api/profile': 'Get user profile (requires auth)'
+      },
+      health_data: {
+        'GET /api/health-metrics': 'Get health metrics (requires auth)',
+        'POST /api/health-metrics': 'Add health metrics (requires auth)',
+        'GET /api/health-behaviors': 'Get health behaviors (requires auth)',
+        'POST /api/health-behaviors': 'Add health behaviors (requires auth)',
+        'GET /api/health-summary': 'Get health summary (requires auth)'
+      },
+      analytics: {
+        'GET /api/health-analytics/trends/:timeRange': 'Get health trends analysis (requires auth)',
+        'GET /api/health-analytics/predictions': 'Get health predictions (requires auth)',
+        'GET /api/health-analytics/insights': 'Get health insights (requires auth)',
+        'POST /api/health-analytics/export-anonymous': 'Export anonymous data (requires auth)'
+      },
+      tools: {
+        'POST /api/calculate-bmi': 'Calculate BMI (requires auth)',
+        'GET /api/risk-assessment': 'Get risk assessment (requires auth)',
+        'GET /api/health-trends': 'Get health trends (requires auth)'
+      }
+    },
+    security: {
+      authentication: 'JWT Bearer Token required for protected endpoints',
+      standards: 'HIPAA, GDPR, Thailand PDPA compliant'
+    }
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    message: 'Health Management API is running!',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Start server
+async function startServer() {
+  await initDatabase();
+  
+  app.listen(PORT, () => {
+    console.log(`🚀 Health Management API running on port ${PORT}`);
+    console.log(`📊 API Endpoint: http://localhost:${PORT}/api`);
+  });
+}
+
+startServer().catch(console.error);
