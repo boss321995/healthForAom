@@ -2,17 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
-const HealthAnalytics = ({ 
-  userProfile, 
-  recentMetrics, 
-  healthSummary, 
-  getCurrentBMI, 
-  getCurrentWeight, 
-  getBMICategory, 
-  getBMIColor,
-  calculateHealthScore,
-  generateHealthInsights
-}) => {
+const HealthAnalytics = () => {
   const { user } = useAuth();
   const [trends, setTrends] = useState(null);
   const [predictions, setPredictions] = useState(null);
@@ -20,7 +10,6 @@ const HealthAnalytics = ({
   const [loading, setLoading] = useState(true);
   const [selectedTimeRange, setSelectedTimeRange] = useState('6months');
   const [activeTab, setActiveTab] = useState('trends');
-  const [apiStatus, setApiStatus] = useState({ connected: false, aiActive: false });
 
   useEffect(() => {
     console.log('🔄 HealthAnalytics useEffect triggered');
@@ -47,7 +36,6 @@ const HealthAnalytics = ({
         setTrends(null);
         setPredictions(null);
         setInsights(null);
-        setApiStatus({ connected: false, aiActive: false });
         setLoading(false);
         return;
       }
@@ -68,7 +56,6 @@ const HealthAnalytics = ({
       setTrends(trendsRes.data.data);
       setPredictions(predictionsRes.data.data);
       setInsights(insightsRes.data.data);
-      setApiStatus({ connected: true, aiActive: true });
     } catch (error) {
       console.error('Error fetching health analytics:', error);
       
@@ -86,7 +73,6 @@ const HealthAnalytics = ({
       setTrends(null);
       setPredictions(null);
       setInsights(null);
-      setApiStatus({ connected: false, aiActive: false });
     } finally {
       setLoading(false);
     }
@@ -121,48 +107,33 @@ const HealthAnalytics = ({
               <span className="text-2xl mr-2">⚖️</span>
               แนวโน้ม BMI
             </h3>
-            {(() => {
-              const currentBMI = getCurrentBMI ? getCurrentBMI() : null;
-              const currentWeight = getCurrentWeight ? getCurrentWeight() : null;
-              const bmiCategory = getBMICategory && currentBMI ? getBMICategory(currentBMI) : 'ไม่มีข้อมูล';
-              const bmiColor = getBMIColor && currentBMI ? getBMIColor(currentBMI) : 'text-gray-400';
-              
-              return currentBMI ? (
-                <div>
-                  <div className="flex items-center justify-between mb-2 py-2 border-b border-emerald-100">
-                    <span className="text-emerald-700 font-medium">BMI ปัจจุบัน</span>
-                    <span className={`text-2xl font-bold ${bmiColor}`}>
-                      {currentBMI.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2 py-2 border-b border-emerald-100">
-                    <span className="text-emerald-700 font-medium">หมวดหมู่</span>
-                    <span className={`font-semibold ${bmiColor}`}>{bmiCategory}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2 py-2 border-b border-emerald-100">
-                    <span className="text-emerald-700 font-medium">น้ำหนักปัจจุบัน</span>
-                    <span className="text-emerald-900 font-semibold">{currentWeight ? `${currentWeight} กก.` : 'ไม่มีข้อมูล'}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <span className="text-emerald-700 font-medium">แนวโน้ม</span>
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                      trends?.trends?.bmi?.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-300' :
-                      trends?.trends?.bmi?.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-300' :
-                      'bg-blue-50 text-blue-800 border-blue-300'
-                    }`}>
-                      {trends?.trends?.bmi?.trend === 'increasing' ? 'เพิ่มขึ้น' :
-                       trends?.trends?.bmi?.trend === 'decreasing' ? 'ลดลง' : 
-                       trends?.trends?.bmi?.trend ? 'คงที่' : 'ไม่มีข้อมูลเปรียบเทียบ'}
-                    </span>
-                  </div>
+            {trends.trends?.bmi?.trend !== 'no_data' ? (
+              <div>
+                <div className="flex items-center justify-between mb-2 py-2 border-b border-emerald-100">
+                  <span className="text-emerald-700 font-medium">BMI ปัจจุบัน</span>
+                  <span className="text-2xl font-bold text-emerald-900">
+                    {trends.trends?.bmi?.current || '--'}
+                  </span>
                 </div>
-              ) : (
-                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">
-                  ไม่มีข้อมูลส่วนสูงและน้ำหนัก<br/>
-                  <span className="text-sm">กรุณากรอกข้อมูลในหน้าโปรไฟล์</span>
-                </p>
-              );
-            })()}
+                <div className="flex items-center justify-between mb-2 py-2 border-b border-emerald-100">
+                  <span className="text-emerald-700 font-medium">หมวดหมู่</span>
+                  <span className="text-emerald-900 font-semibold">{trends.trends?.bmi?.category || '--'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-emerald-700 font-medium">แนวโน้ม</span>
+                  <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                    trends.trends.bmi.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-300' :
+                    trends.trends.bmi.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-300' :
+                    'bg-blue-50 text-blue-800 border-blue-300'
+                  }`}>
+                    {trends.trends.bmi.trend === 'increasing' ? 'เพิ่มขึ้น' :
+                     trends.trends.bmi.trend === 'decreasing' ? 'ลดลง' : 'คงที่'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอ</p>
+            )}
           </div>
 
           {/* Blood Pressure Trend */}
@@ -252,49 +223,24 @@ const HealthAnalytics = ({
           <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
             <h3 className="text-lg font-bold text-blue-800 mb-4 flex items-center border-b-2 border-blue-200 pb-2">
               <span className="text-2xl mr-2">🎯</span>
-              คะแนนสุขภาพรวม (ข้อมูลจริง)
+              คะแนนสุขภาพรวม
             </h3>
-            {(() => {
-              const healthScore = calculateHealthScore ? calculateHealthScore() : null;
-              const healthInsights = generateHealthInsights ? generateHealthInsights() : null;
-              
-              return healthScore ? (
-                <div className="text-center">
-                  <div className={`text-4xl font-bold mb-2 ${
-                    healthScore.score >= 80 ? 'text-green-600' : 
-                    healthScore.score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                  }`}>
-                    {healthScore.score}/100
-                  </div>
-                  <div className="text-lg text-blue-800 mb-2 font-semibold">
-                    เกรด {healthScore.grade}
-                  </div>
-                  <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border-2 mb-3 ${
-                    healthScore.score >= 80 ? 'bg-green-50 text-green-800 border-green-400' :
-                    healthScore.score >= 60 ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
-                    'bg-red-50 text-red-800 border-red-400'
-                  }`}>
-                    {healthScore.status}
-                  </div>
-                  <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
-                    ประเมินจาก {healthScore.factors}/4 ตัวชี้วัด • ข้อมูลครบ {Math.round(healthInsights?.dataCompleteness || 0)}%
-                  </div>
-                  {healthInsights && healthInsights.riskFactors > 0 && (
-                    <div className="mt-3 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                      ⚠️ พบปัจจัยเสี่ยง {healthInsights.riskFactors} ด้าน
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-gray-400 mb-2">--</div>
-                  <div className="text-lg text-gray-600 mb-2 font-semibold">ไม่มีข้อมูล</div>
-                  <div className="text-gray-500 text-sm">
-                    กรุณากรอกข้อมูลสุขภาพเพื่อรับคะแนนประเมิน
-                  </div>
-                </div>
-              );
-            })()}
+            <div className="text-center">
+              <div className="text-4xl font-bold text-blue-900 mb-2">
+                {trends.trends?.overall?.score || '--'}
+              </div>
+              <div className="text-lg text-blue-800 mb-2 font-semibold">
+                เกรด {trends.trends?.overall?.grade || '--'}
+              </div>
+              <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                (trends.trends?.overall?.score || 0) >= 80 ? 'bg-green-50 text-green-800 border-green-400' :
+                (trends.trends?.overall?.score || 0) >= 60 ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
+                'bg-red-50 text-red-800 border-red-400'
+              }`}>
+                {(trends.trends?.overall?.score || 0) >= 80 ? 'ดีเยี่ยม' :
+                 (trends.trends?.overall?.score || 0) >= 60 ? 'ปานกลาง' : 'ต้องปรับปรุง'}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -393,120 +339,78 @@ const HealthAnalytics = ({
     </div>
   );
 
-  const renderInsightsTab = () => {
-    const healthInsights = generateHealthInsights ? generateHealthInsights() : null;
-    
-    return (
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-blue-800 mb-6">ข้อมูลเชิงลึกสุขภาพ (วิเคราะห์จากข้อมูลจริง)</h2>
-        
-        {healthInsights ? (
-          <div className="space-y-6">
-            {/* Health Score Summary */}
-            <div className="bg-blue-50 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
-              <h3 className="text-lg font-bold text-blue-800 mb-4 border-b-2 border-blue-200 pb-2">
-                <span className="mr-2">📊</span>
-                สรุปคะแนนสุขภาพ
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className={`text-2xl font-bold ${
-                    healthInsights.score >= 80 ? 'text-green-600' : 
-                    healthInsights.score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                  }`}>
-                    {healthInsights.score}/100
+  const renderInsightsTab = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-blue-800 mb-6">ข้อมูลเชิงลึกสุขภาพ</h2>
+      {insights ? (
+        <div className="space-y-6">
+          {/* Risk Factors */}
+          {insights.riskFactors && insights.riskFactors.length > 0 && (
+            <div className="bg-red-50 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
+              <h3 className="text-lg font-bold text-red-800 mb-4 border-b-2 border-red-200 pb-2">ปัจจัยเสี่ยงที่พบ</h3>
+              <div className="space-y-3">
+                {insights.riskFactors.map((risk, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
+                    <span className="text-red-800 font-medium">{risk.description}</span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                      risk.level === 'high' ? 'bg-red-100 text-red-800 border-red-400' :
+                      'bg-yellow-100 text-yellow-800 border-yellow-400'
+                    }`}>
+                      {risk.level === 'high' ? 'สูง' : 'ปานกลาง'}
+                    </span>
                   </div>
-                  <div className="text-sm text-blue-700">คะแนนรวม</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-800">{healthInsights.grade}</div>
-                  <div className="text-sm text-blue-700">เกรด</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{healthInsights.riskFactors}</div>
-                  <div className="text-sm text-blue-700">ปัจจัยเสี่ยง</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{Math.round(healthInsights.dataCompleteness)}%</div>
-                  <div className="text-sm text-blue-700">ความครบถ้วน</div>
-                </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {/* Health Insights */}
-            {healthInsights.insights && healthInsights.insights.length > 0 && (
-              <div className="bg-red-50 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
-                <h3 className="text-lg font-bold text-red-800 mb-4 border-b-2 border-red-200 pb-2">
-                  <span className="mr-2">⚠️</span>
-                  ประเด็นที่ควรให้ความสำคัญ
-                </h3>
-                <div className="space-y-3">
-                  {healthInsights.insights.map((insight, index) => (
-                    <div key={index} className="p-3 bg-white rounded-lg border-2 border-red-200">
-                      <div className="text-red-800 font-medium">{insight}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recommendations */}
+          {/* Improvements */}
+          {insights.improvements && insights.improvements.length > 0 && (
             <div className="bg-green-50 backdrop-blur-lg rounded-lg p-6 border-2 border-green-300 shadow-lg">
-              <h3 className="text-lg font-bold text-green-800 mb-4 border-b-2 border-green-200 pb-2">
-                <span className="mr-2">💡</span>
-                คำแนะนำเฉพาะบุคคล
-              </h3>
+              <h3 className="text-lg font-bold text-green-800 mb-4 border-b-2 border-green-200 pb-2">จุดที่ดีขึ้น</h3>
+              <div className="space-y-3">
+                {insights.improvements.map((improvement, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-green-200">
+                    <span className="text-green-800 font-medium">{improvement.description}</span>
+                    <span className="px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800 border-2 border-green-400">
+                      {improvement.progress === 'excellent' ? 'ดีเยี่ยม' : 'ดี'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Recommendations */}
+          {insights.recommendations && (
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
+              <h3 className="text-lg font-bold text-blue-800 mb-4 border-b-2 border-blue-200 pb-2">คำแนะนำจาก AI</h3>
               <div className="space-y-4">
-                {healthInsights.recommendations?.diet && healthInsights.recommendations.diet.length > 0 && (
-                  <div className="p-4 bg-white rounded-lg border-2 border-green-200">
-                    <h4 className="font-bold text-green-800 mb-2 flex items-center">
-                      <span className="mr-2">🍎</span>
-                      อาหาร
-                    </h4>
+                {insights.recommendations.recommendations?.diet && (
+                  <div className="p-4 bg-green-50 rounded-lg border-2 border-green-200">
+                    <h4 className="font-bold text-green-800 mb-2">🍎 อาหาร</h4>
                     <ul className="list-disc list-inside space-y-1 text-green-700 text-sm font-medium">
-                      {healthInsights.recommendations.diet.map((item, index) => (
+                      {insights.recommendations.recommendations.diet.map((item, index) => (
                         <li key={index}>{item}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-                
-                {healthInsights.recommendations?.exercise && healthInsights.recommendations.exercise.length > 0 && (
-                  <div className="p-4 bg-white rounded-lg border-2 border-blue-200">
-                    <h4 className="font-bold text-blue-800 mb-2 flex items-center">
-                      <span className="mr-2">🏃‍♂️</span>
-                      การออกกำลังกาย
-                    </h4>
+                {insights.recommendations.recommendations?.exercise && (
+                  <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                    <h4 className="font-bold text-blue-800 mb-2">🏃‍♂️ การออกกำลังกาย</h4>
                     <ul className="list-disc list-inside space-y-1 text-blue-700 text-sm font-medium">
-                      {healthInsights.recommendations.exercise.map((item, index) => (
+                      {insights.recommendations.recommendations.exercise.map((item, index) => (
                         <li key={index}>{item}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-                
-                {healthInsights.recommendations?.lifestyle && healthInsights.recommendations.lifestyle.length > 0 && (
-                  <div className="p-4 bg-white rounded-lg border-2 border-purple-200">
-                    <h4 className="font-bold text-purple-800 mb-2 flex items-center">
-                      <span className="mr-2">🌱</span>
-                      วิถีชีวิต
-                    </h4>
+                {insights.recommendations.recommendations?.lifestyle && (
+                  <div className="p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+                    <h4 className="font-bold text-purple-800 mb-2">🌱 วิถีชีวิต</h4>
                     <ul className="list-disc list-inside space-y-1 text-purple-700 text-sm font-medium">
-                      {healthInsights.recommendations.lifestyle.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                
-                {healthInsights.recommendations?.medical && healthInsights.recommendations.medical.length > 0 && (
-                  <div className="p-4 bg-white rounded-lg border-2 border-red-200">
-                    <h4 className="font-bold text-red-800 mb-2 flex items-center">
-                      <span className="mr-2">🏥</span>
-                      การรักษาพยาบาล
-                    </h4>
-                    <ul className="list-disc list-inside space-y-1 text-red-700 text-sm font-medium">
-                      {healthInsights.recommendations.medical.map((item, index) => (
+                      {insights.recommendations.recommendations.lifestyle.map((item, index) => (
                         <li key={index}>{item}</li>
                       ))}
                     </ul>
@@ -514,18 +418,41 @@ const HealthAnalytics = ({
                 )}
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="text-center py-12 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
-            <div className="text-6xl mb-4">💡</div>
-            <h3 className="text-xl font-bold text-blue-800 mb-2">ไม่มีข้อมูลเชิงลึก</h3>
-            <p className="text-blue-600 font-medium">กรุณาบันทึกข้อมูลสุขภาพเพิ่มเติมเพื่อรับข้อมูลเชิงลึก</p>
-            <p className="text-blue-500 text-sm mt-2">ต้องมีข้อมูลอย่างน้อย BMI, ความดันโลหิต, น้ำตาลในเลือด หรืออัตราการเต้นหัวใจ</p>
-          </div>
-        )}
-      </div>
-    );
-  };
+          )}
+
+          {/* Next Actions */}
+          {insights.nextActions && insights.nextActions.length > 0 && (
+            <div className="bg-blue-50 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
+              <h3 className="text-lg font-bold text-blue-800 mb-4 border-b-2 border-blue-200 pb-2">สิ่งที่ควรทำต่อไป</h3>
+              <div className="space-y-3">
+                {insights.nextActions.map((action, index) => (
+                  <div key={index} className="flex items-start justify-between p-3 bg-white rounded-lg border border-blue-200">
+                    <div className="flex-1">
+                      <div className="text-blue-800 font-medium">{action.description}</div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ml-3 border-2 ${
+                      action.priority === 'urgent' ? 'bg-red-100 text-red-800 border-red-400' :
+                      action.priority === 'high' ? 'bg-orange-100 text-orange-800 border-orange-400' :
+                      'bg-blue-100 text-blue-800 border-blue-400'
+                    }`}>
+                      {action.priority === 'urgent' ? 'ด่วน' :
+                       action.priority === 'high' ? 'สำคัญ' : 'ปานกลาง'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
+          <div className="text-6xl mb-4">💡</div>
+          <h3 className="text-xl font-bold text-blue-800 mb-2">ไม่มีข้อมูลเชิงลึก</h3>
+          <p className="text-blue-600 font-medium">กรุณาบันทึกข้อมูลสุขภาพเพิ่มเติมเพื่อรับข้อมูลเชิงลึก</p>
+        </div>
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -542,124 +469,27 @@ const HealthAnalytics = ({
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-            <div>
-              <h1 className="text-4xl font-bold text-blue-800 mb-2">การวิเคราะห์สุขภาพด้วย AI</h1>
-              <p className="text-blue-600">วิเคราะห์แนวโน้มสุขภาพและรับคำแนะนำเฉพาะบุคคล</p>
-            </div>
-            
-            {/* Status Tags */}
-            <div className="flex flex-wrap gap-2 mt-4 md:mt-0">
-              <div className={`px-3 py-1 rounded-full text-sm font-semibold border-2 flex items-center ${
-                apiStatus.connected ? 
-                'bg-green-50 text-green-800 border-green-300' : 
-                'bg-red-50 text-red-800 border-red-300'
-              }`}>
-                <span className="mr-1">{apiStatus.connected ? '🟢' : '🔴'}</span>
-                API {apiStatus.connected ? 'เชื่อมต่อแล้ว' : 'ไม่เชื่อมต่อ'}
-              </div>
-              
-              <div className={`px-3 py-1 rounded-full text-sm font-semibold border-2 flex items-center ${
-                apiStatus.aiActive ? 
-                'bg-purple-50 text-purple-800 border-purple-300' : 
-                'bg-gray-50 text-gray-800 border-gray-300'
-              }`}>
-                <span className="mr-1">{apiStatus.aiActive ? '🤖' : '🔇'}</span>
-                AI {apiStatus.aiActive ? 'ใช้งานได้' : 'ไม่พร้อมใช้'}
-              </div>
-              
-              {getCurrentBMI && getCurrentBMI() && (
-                <div className="px-3 py-1 rounded-full text-sm font-semibold border-2 bg-blue-50 text-blue-800 border-blue-300 flex items-center">
-                  <span className="mr-1">📊</span>
-                  BMI: {getCurrentBMI().toFixed(1)}
-                </div>
-              )}
-              
-              <div className={`px-3 py-1 rounded-full text-sm font-semibold border-2 flex items-center ${
-                user && localStorage.getItem('healthToken') ? 
-                'bg-emerald-50 text-emerald-800 border-emerald-300' : 
-                'bg-red-50 text-red-800 border-red-300'
-              }`}>
-                <span className="mr-1">{user && localStorage.getItem('healthToken') ? '🔐' : '🔓'}</span>
-                {user && localStorage.getItem('healthToken') ? 'ยืนยันตัวตน' : 'ไม่ได้ยืนยัน'}
-              </div>
-            </div>
-          </div>
+          <h1 className="text-4xl font-bold text-blue-800 mb-2">การวิเคราะห์สุขภาพด้วย AI</h1>
+          <p className="text-blue-600">วิเคราะห์แนวโน้มสุขภาพและรับคำแนะนำเฉพาะบุคคล</p>
         </div>
 
-        {/* Enhanced Debug Panel */}
+        {/* Debug Panel */}
         <div className="mb-6 p-4 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
-          <div className="text-sm text-blue-800 mb-3 font-semibold flex items-center">
-            <span className="mr-2">🔧</span>
-            สถานะระบบและข้อมูล (Real-time Analysis)
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-              <div className="text-blue-700 font-medium mb-1">ผู้ใช้งาน</div>
-              <div className="text-blue-900 font-semibold">{user ? user.username : 'ไม่ได้เข้าสู่ระบบ'}</div>
+          <div className="text-sm text-blue-800 mb-2 font-semibold">🔧 System Status:</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+            <div className="text-blue-700">
+              User: <span className="text-blue-900 font-semibold">{user ? user.username : 'None'}</span>
             </div>
-            <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200">
-              <div className="text-emerald-700 font-medium mb-1">Token API</div>
-              <div className="text-emerald-900 font-semibold">{localStorage.getItem('healthToken') ? 'มีอยู่' : 'ไม่มี'}</div>
+            <div className="text-blue-700">
+              Token: <span className="text-blue-900 font-semibold">{localStorage.getItem('healthToken') ? 'Present' : 'Missing'}</span>
             </div>
-            <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
-              <div className="text-purple-700 font-medium mb-1">ข้อมูล AI</div>
-              <div className="text-purple-900 font-semibold">{trends ? 'โหลดแล้ว' : 'ไม่มีข้อมูล'}</div>
+            <div className="text-blue-700">
+              Trends: <span className="text-blue-900 font-semibold">{trends ? 'Loaded' : 'None'}</span>
             </div>
-            <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-              <div className="text-amber-700 font-medium mb-1">ช่วงเวลา</div>
-              <div className="text-amber-900 font-semibold">
-                {selectedTimeRange === '1month' ? '1 เดือน' : 
-                 selectedTimeRange === '3months' ? '3 เดือน' :
-                 selectedTimeRange === '6months' ? '6 เดือน' : '1 ปี'}
-              </div>
-            </div>
-            <div className="bg-rose-50 p-3 rounded-lg border border-rose-200">
-              <div className="text-rose-700 font-medium mb-1">BMI ปัจจุบัน</div>
-              <div className="text-rose-900 font-semibold">
-                {getCurrentBMI && getCurrentBMI() ? getCurrentBMI().toFixed(1) : 'ไม่มีข้อมูล'}
-              </div>
-            </div>
-            <div className="bg-cyan-50 p-3 rounded-lg border border-cyan-200">
-              <div className="text-cyan-700 font-medium mb-1">ข้อมูลล่าสุด</div>
-              <div className="text-cyan-900 font-semibold">
-                {recentMetrics && recentMetrics.length > 0 ? `${recentMetrics.length} รายการ` : 'ไม่มี'}
-              </div>
+            <div className="text-blue-700">
+              Time Range: <span className="text-blue-900 font-semibold">{selectedTimeRange}</span>
             </div>
           </div>
-          
-          {/* Real-time Health Score Display */}
-          {(() => {
-            const healthScore = calculateHealthScore ? calculateHealthScore() : null;
-            return healthScore && (
-              <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg border-2 border-blue-300">
-                <div className="text-sm font-semibold text-blue-800 mb-2">⚡ คะแนนสุขภาพแบบ Real-time</div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="text-center">
-                    <div className={`text-lg font-bold ${
-                      healthScore.score >= 80 ? 'text-green-600' : 
-                      healthScore.score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {healthScore.score}/100
-                    </div>
-                    <div className="text-blue-700">คะแนน</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-blue-800">{healthScore.grade}</div>
-                    <div className="text-blue-700">เกรด</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-orange-600">{healthScore.factors}</div>
-                    <div className="text-blue-700">ตัวชี้วัด</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-purple-600">{healthScore.status}</div>
-                    <div className="text-blue-700">สถานะ</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
         </div>
 
         {/* Tabs */}

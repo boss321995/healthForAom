@@ -1,0 +1,175 @@
+/* Health Theme - Blue & White Colors */
+
+/* Global background override for health theme */
+.health-theme {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #ffffff 100%);
+  min-height: 100vh;
+}
+
+/* Card backgrounds - White with blue borders */
+.health-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #dbeafe !important;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Form inputs - White backgrounds with blue accents */
+.health-input {
+  background: white !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #1e40af !important;
+}
+
+.health-input:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px #3b82f6 !important;
+}
+
+.health-input::placeholder {
+  color: #64748b !important;
+}
+
+/* Text colors */
+.health-text-primary {
+  color: #1e40af !important;
+}
+
+.health-text-secondary {
+  color: #475569 !important;
+}
+
+.health-text-muted {
+  color: #64748b !important;
+}
+
+/* Buttons */
+.health-btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.health-btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #1e40af) !important;
+}
+
+.health-btn-secondary {
+  background: white !important;
+  color: #3b82f6 !important;
+  border: 1px solid #3b82f6 !important;
+}
+
+.health-btn-secondary:hover {
+  background: #eff6ff !important;
+}
+
+/* Navigation tabs */
+.health-tab-active {
+  background: #3b82f6 !important;
+  color: white !important;
+  border: 1px solid #2563eb !important;
+}
+
+.health-tab-inactive {
+  background: rgba(255, 255, 255, 0.7) !important;
+  color: #1e40af !important;
+  border: 1px solid #dbeafe !important;
+}
+
+.health-tab-inactive:hover {
+  background: #eff6ff !important;
+}
+
+/* Health metric cards */
+.health-metric-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #dbeafe !important;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Quick action cards */
+.health-action-card {
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe) !important;
+  border: 1px solid #bfdbfe !important;
+  color: #1e40af !important;
+}
+
+.health-action-card:hover {
+  background: linear-gradient(135deg, #e0f2fe, #bae6fd) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 15px -3px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Header styles */
+.health-header {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  backdrop-filter: blur(10px);
+}
+
+.health-header h1 {
+  color: #1e40af !important;
+}
+
+.health-header p {
+  color: #3b82f6 !important;
+}
+
+/* Form sections */
+.health-form-section {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.health-form-section h3 {
+  color: #1e40af !important;
+  border-bottom: 2px solid #dbeafe;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Status indicators */
+.health-status-good {
+  color: #059669 !important;
+  background: #ecfdf5 !important;
+}
+
+.health-status-warning {
+  color: #d97706 !important;
+  background: #fffbeb !important;
+}
+
+.health-status-danger {
+  color: #dc2626 !important;
+  background: #fef2f2 !important;
+}
+
+/* Loading states */
+.health-loading {
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe) !important;
+}
+
+.health-loading .spinner {
+  border-color: #3b82f6 !important;
+}
+
+/* Analytics charts and graphs */
+.health-analytics {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid #dbeafe !important;
+}
+
+/* Profile sections */
+.health-profile-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 0.75rem;
+}
+
+.health-profile-avatar {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8) !important;
+  color: white !important;
+}

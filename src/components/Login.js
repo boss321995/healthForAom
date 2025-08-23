@@ -34,27 +34,27 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-blue-100 to-purple-50">
       <div className="max-w-md w-full space-y-8 p-8">
-        <div className="bg-white/10 backdrop-blur-lg rounded-lg p-8 border border-white/20">
+        <div className="bg-white/95 backdrop-blur-lg rounded-lg p-8 border-2 border-blue-300 shadow-xl">
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-white mb-2">
+            <h2 className="text-3xl font-bold text-blue-800 mb-2">
               เข้าสู่ระบบ
             </h2>
-            <p className="text-gray-300 mb-8">
+            <p className="text-blue-700 mb-8 font-semibold">
               ระบบจัดการสุขภาพส่วนบุคคล
             </p>
           </div>
           
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
+              <div className="bg-red-100 border-2 border-red-400 text-red-800 px-4 py-3 rounded-lg font-semibold">
                 {error}
               </div>
             )}
             
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="username" className="block text-sm font-bold text-blue-800 mb-2">
                 ชื่อผู้ใช้ หรือ อีเมล
               </label>
               <input
@@ -62,7 +62,7 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
                 name="username"
                 type="text"
                 required
-                className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                className="w-full px-3 py-2 bg-white/90 border-2 border-blue-300 rounded-lg text-blue-800 placeholder-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium"
                 placeholder="กรอกชื่อผู้ใช้ หรือ อีเมล"
                 value={formData.username}
                 onChange={handleChange}
@@ -70,7 +70,7 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
             </div>
             
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="password" className="block text-sm font-bold text-blue-800 mb-2">
                 รหัสผ่าน
               </label>
               <input
@@ -78,7 +78,7 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
                 name="password"
                 type="password"
                 required
-                className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                className="w-full px-3 py-2 bg-white/90 border-2 border-blue-300 rounded-lg text-blue-800 placeholder-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium"
                 placeholder="กรอกรหัสผ่าน"
                 value={formData.password}
                 onChange={handleChange}
@@ -88,7 +88,7 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex justify-center py-3 px-4 border-2 border-emerald-500 rounded-lg shadow-lg text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 transition-all"
             >
               {isLoading ? (
                 <div className="flex items-center">
@@ -105,21 +105,21 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
           </form>
           
           <div className="mt-6 text-center space-y-3">
-            <p className="text-gray-300">
+            <p className="text-blue-700 font-semibold">
               ยังไม่มีบัญชี?{' '}
               <button
                 onClick={onSwitchToRegister}
-                className="text-cyan-400 hover:text-cyan-300 font-medium"
+                className="text-emerald-600 hover:text-emerald-700 font-bold underline"
               >
                 สมัครสมาชิก
               </button>
             </p>
             
             {onBackToLanding && (
-              <p className="text-gray-400">
+              <p className="text-blue-600">
                 <button
                   onClick={onBackToLanding}
-                  className="text-gray-400 hover:text-gray-300 text-sm underline"
+                  className="text-blue-600 hover:text-blue-700 text-sm underline font-medium"
                 >
                   ← กลับหน้าหลัก
                 </button>

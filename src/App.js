@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import LandingPage from './components/LandingPage';
 import HealthAssessmentForm from './components/HealthAssessmentForm';
 import HealthAnalytics from './components/HealthAnalytics';
+import UpdateProfile from './components/UpdateProfile';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const AppContent = () => {
@@ -14,8 +15,8 @@ const AppContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-xl">กำลังโหลด...</div>
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-100 to-cyan-50 flex items-center justify-center">
+        <div className="text-blue-800 text-xl font-medium">กำลังโหลด...</div>
       </div>
     );
   }

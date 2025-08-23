@@ -50,7 +50,7 @@ const Register = ({ onSwitchToLogin, onBackToLanding }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50 to-white">
       <div className="max-w-md w-full space-y-8 p-8">
         <div className="bg-white/10 backdrop-blur-lg rounded-lg p-8 border border-white/20">
           <div className="text-center">
