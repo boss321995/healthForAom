@@ -30,24 +30,26 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-blue-100 to-purple-50">
       {/* Navigation */}
       <nav className="bg-white/95 backdrop-blur-lg border-b-2 border-blue-300 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-3 sm:py-4">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-blue-800">HealthHub</h1>
-              <span className="ml-2 text-blue-600">🏥</span>
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-blue-800">HealthHub</h1>
+              <span className="ml-1 sm:ml-2 text-blue-600 text-lg sm:text-xl">🏥</span>
             </div>
-            <div className="flex space-x-4">
+            <div className="flex space-x-2 sm:space-x-4">
               <button
                 onClick={onLogin}
-                className="text-blue-800 hover:text-blue-900 px-4 py-2 rounded-lg bg-white/80 hover:bg-white/90 transition-all font-semibold border border-blue-300"
+                className="text-blue-800 hover:text-blue-900 px-2 sm:px-4 py-1 sm:py-2 rounded-lg bg-white/80 hover:bg-white/90 transition-all font-semibold border border-blue-300 text-sm sm:text-base"
               >
-                เข้าสู่ระบบ
+                <span className="hidden sm:inline">เข้าสู่ระบบ</span>
+                <span className="sm:hidden">เข้าระบบ</span>
               </button>
               <button
                 onClick={handleStartAssessment}
-                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white px-6 py-2 rounded-lg font-bold border-2 border-green-500 shadow-lg transition-all"
+                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white px-3 sm:px-6 py-1 sm:py-2 rounded-lg font-bold border-2 border-green-500 shadow-lg transition-all text-sm sm:text-base"
               >
-                เริ่มใช้งาน
+                <span className="hidden sm:inline">เริ่มใช้งาน</span>
+                <span className="sm:hidden">เริ่มต้น</span>
               </button>
             </div>
           </div>
@@ -55,48 +57,48 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
       </nav>
 
       {/* Hero Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-5xl md:text-7xl font-bold text-blue-800 mb-8">
+      <section className="py-12 sm:py-20">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 text-center">
+          <h1 className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-bold text-blue-800 mb-6 sm:mb-8">
             <span className="bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent">
-              ตรวจสุขภาพ
+              HealthHub
             </span>
             <br />
-            <span className="text-4xl md:text-5xl text-blue-700">ออนไลน์ฟรี</span>
+            <span className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-blue-700">ระบบจัดการสุขภาพ</span>
           </h1>
-          <p className="text-xl md:text-2xl text-blue-700 mb-12 max-w-4xl mx-auto font-semibold">
-            วิเคราะห์ความเสี่ยงสุขภาพของคุณ คำนวณ BMI ประเมินโรคเบาหวาน โรคหัวใจ 
-            พร้อมคำแนะนำจากผู้เชี่ยวชาญ
+          <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-blue-700 mb-8 sm:mb-12 max-w-4xl mx-auto font-semibold px-4">
+            บันทึกค่าตรวจสุขภาพ ติดตามพฤติกรรม วิเคราะห์แนวโน้มด้วย AI 
+            พร้อมคำแนะนำเฉพาะบุคคลและ Chatbot ตอบคำถามตลอด 24 ชั่วโมง
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-12 sm:mb-16 px-4">
             <button
               onClick={handleStartAssessment}
-              className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white px-8 py-4 rounded-lg text-lg font-bold border-2 border-emerald-500 shadow-lg transform hover:scale-105 transition-all"
+              className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-bold border-2 border-emerald-500 shadow-lg transform hover:scale-105 transition-all"
             >
-              🩺 เริ่มตรวจสุขภาพเลย
+              🏥 เริ่มใช้งานเลย
             </button>
             <button
               onClick={() => document.getElementById('features').scrollIntoView({ behavior: 'smooth' })}
-              className="bg-white/95 hover:bg-blue-50 text-blue-800 px-8 py-4 rounded-lg text-lg font-bold border-2 border-blue-300 transition-all shadow-lg"
+              className="bg-white/95 hover:bg-blue-50 text-blue-800 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-bold border-2 border-blue-300 transition-all shadow-lg"
             >
               📋 ดูฟีเจอร์ทั้งหมด
             </button>
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
-            <div className="text-center bg-white/90 rounded-lg p-4 shadow-lg border border-blue-200">
-              <div className="text-3xl md:text-4xl font-bold text-emerald-600 mb-2">10+</div>
-              <div className="text-blue-800 font-semibold">ค่าตรวจสุขภาพ</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-8 max-w-4xl mx-auto px-4">
+            <div className="text-center bg-white/90 rounded-lg p-3 sm:p-4 shadow-lg border border-blue-200">
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-emerald-600 mb-1 sm:mb-2">6</div>
+              <div className="text-blue-800 font-semibold text-xs sm:text-sm md:text-base">แท็บหลัก</div>
             </div>
-            <div className="text-center bg-white/90 rounded-lg p-4 shadow-lg border border-blue-200">
-              <div className="text-3xl md:text-4xl font-bold text-red-600 mb-2">5</div>
-              <div className="text-blue-800 font-semibold">โรคที่ประเมินได้</div>
+            <div className="text-center bg-white/90 rounded-lg p-3 sm:p-4 shadow-lg border border-blue-200">
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-red-600 mb-1 sm:mb-2">AI</div>
+              <div className="text-blue-800 font-semibold text-xs sm:text-sm md:text-base">วิเคราะห์อัจฉริยะ</div>
             </div>
-            <div className="text-center bg-white/90 rounded-lg p-4 shadow-lg border border-blue-200">
-              <div className="text-3xl md:text-4xl font-bold text-purple-600 mb-2">24/7</div>
-              <div className="text-blue-800 font-semibold">บริการตลอดเวลา</div>
+            <div className="text-center bg-white/90 rounded-lg p-3 sm:p-4 shadow-lg border border-blue-200">
+              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600 mb-1 sm:mb-2">PDF</div>
+              <div className="text-blue-800 font-semibold">รายงานไทย</div>
             </div>
             <div className="text-center bg-white/90 rounded-lg p-4 shadow-lg border border-blue-200">
               <div className="text-3xl md:text-4xl font-bold text-amber-600 mb-2">ฟรี</div>
@@ -111,10 +113,10 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-blue-800 mb-4">
-              ฟีเจอร์ครบครัน เพื่อสุขภาพที่ดี
+              ฟีเจอร์ครบครัน ระบบจัดการสุขภาพ
             </h2>
             <p className="text-xl text-blue-700 max-w-3xl mx-auto font-semibold">
-              ระบบวิเคราะห์สุขภาพอัจฉริยะ ให้คำแนะนำแบบส่วนบุคคล
+              ครบครันตั้งแต่บันทึกข้อมูล วิเคราะห์ AI ถึงรายงาน PDF ภาษาไทย
             </p>
           </div>
 

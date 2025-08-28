@@ -52,6 +52,58 @@ const HealthAnalytics = ({
         return;
       }
       
+      // Check if it's a mock token - don't send to backend
+      if (token.startsWith('mock-jwt-token-')) {
+        console.log('🎭 Mock token detected - using mock data instead of API');
+        // Set mock data for demo
+        setTrends({
+          trends: {
+            bmi: { 
+              trend: 'stable', 
+              change: 0.1,
+              average: getCurrentBMI ? getCurrentBMI() : 22.5
+            },
+            weight: { 
+              trend: 'decreasing', 
+              change: -1.2,
+              average: getCurrentWeight ? getCurrentWeight() : 65
+            },
+            bloodPressure: { 
+              trend: 'improving', 
+              change: -5,
+              averages: {
+                systolic: 120,
+                diastolic: 80
+              },
+              riskLevel: 'low'
+            },
+            bloodSugar: {
+              trend: 'stable',
+              change: 2,
+              average: 95,
+              diabetesRisk: 'low'
+            },
+            cholesterol: {
+              trend: 'improving',
+              change: -10,
+              average: 180
+            }
+          }
+        });
+        setPredictions({
+          nextMonthBMI: getCurrentBMI ? getCurrentBMI() + 0.1 : 22.5,
+          weightGoal: 'On track',
+          healthScore: calculateHealthScore ? calculateHealthScore() : 85
+        });
+        setInsights({
+          recommendations: generateHealthInsights ? generateHealthInsights() : ['ออกกำลังกายสม่ำเสมอ', 'ดื่มน้ำให้เพียงพอ'],
+          alerts: []
+        });
+        setApiStatus({ connected: false, aiActive: true }); // AI active but not connected to real API
+        setLoading(false);
+        return;
+      }
+      
       const headers = { Authorization: `Bearer ${token}` };
 
       const [trendsRes, predictionsRes, insightsRes] = await Promise.all([
@@ -145,15 +197,24 @@ const HealthAnalytics = ({
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <span className="text-emerald-700 font-medium">แนวโน้ม</span>
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                      trends?.trends?.bmi?.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-300' :
-                      trends?.trends?.bmi?.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-300' :
-                      'bg-blue-50 text-blue-800 border-blue-300'
-                    }`}>
-                      {trends?.trends?.bmi?.trend === 'increasing' ? 'เพิ่มขึ้น' :
-                       trends?.trends?.bmi?.trend === 'decreasing' ? 'ลดลง' : 
-                       trends?.trends?.bmi?.trend ? 'คงที่' : 'ไม่มีข้อมูลเปรียบเทียบ'}
-                    </span>
+                    <div className="text-right">
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                        trends?.trends?.bmi?.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-300' :
+                        trends?.trends?.bmi?.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-300' :
+                        'bg-blue-50 text-blue-800 border-blue-300'
+                      }`}>
+                        {trends?.trends?.bmi?.trend === 'increasing' ? 'เพิ่มขึ้น' :
+                         trends?.trends?.bmi?.trend === 'decreasing' ? 'ลดลง' : 
+                         trends?.trends?.bmi?.trend ? 'คงที่' : 'ไม่มีข้อมูลเปรียบเทียบ'}
+                      </span>
+                      <div className="text-xs text-gray-600 mt-1">
+                        {trends?.trends?.bmi?.trend === 'increasing' ? 
+                          (currentBMI > 24.9 ? 'น้ำหนักเพิ่ม ควรควบคุม' : 'น้ำหนักเพิ่มขึ้น ติดตาม') :
+                         trends?.trends?.bmi?.trend === 'decreasing' ? 
+                          (currentBMI < 18.5 ? 'น้ำหนักลดเกิน ควรเพิ่ม' : 'น้ำหนักลดลง เป็นสิ่งดี 👍') : 
+                         trends?.trends?.bmi?.trend ? 'น้ำหนักเสถียร ดีมาก 👌' : 'ยังไม่มีข้อมูลเปรียบเทียบ'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -176,31 +237,49 @@ const HealthAnalytics = ({
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-red-100">
                   <span className="text-red-700 font-medium">ค่าเฉลี่ย</span>
                   <span className="text-red-900 font-semibold">
-                    {trends.trends.bloodPressure.averages?.systolic || '--'}/
-                    {trends.trends.bloodPressure.averages?.diastolic || '--'}
+                    {trends?.trends?.bloodPressure?.averages?.systolic || '--'}/
+                    {trends?.trends?.bloodPressure?.averages?.diastolic || '--'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-red-100">
                   <span className="text-red-700 font-medium">ระดับความเสี่ยง</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                    trends.trends.bloodPressure.riskLevel === 'high' ? 'bg-red-50 text-red-800 border-red-400' :
-                    trends.trends.bloodPressure.riskLevel === 'moderate' ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
-                    'bg-green-50 text-green-800 border-green-400'
-                  }`}>
-                    {trends.trends.bloodPressure.riskLevel === 'high' ? 'สูง' :
-                     trends.trends.bloodPressure.riskLevel === 'moderate' ? 'ปานกลาง' : 'ต่ำ'}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                      trends?.trends?.bloodPressure?.riskLevel === 'high' ? 'bg-red-50 text-red-800 border-red-400' :
+                      trends?.trends?.bloodPressure?.riskLevel === 'moderate' ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
+                      'bg-green-50 text-green-800 border-green-400'
+                    }`}>
+                      {trends?.trends?.bloodPressure?.riskLevel === 'high' ? 'สูง' :
+                       trends?.trends?.bloodPressure?.riskLevel === 'moderate' ? 'ปานกลาง' : 'ต่ำ'}
+                    </span>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {trends?.trends?.bloodPressure?.riskLevel === 'high' ? 
+                        'ควรปรึกษาแพทย์เร่งด่วน' :
+                       trends?.trends?.bloodPressure?.riskLevel === 'moderate' ? 
+                        'ควรติดตามและปรับพฤติกรรม' : 
+                        'ความดันอยู่ในเกณฑ์ปกติ 👍'}
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between py-2">
                   <span className="text-red-700 font-medium">แนวโน้ม</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                    trends.trends.bloodPressure.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-400' :
-                    trends.trends.bloodPressure.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-400' :
-                    'bg-blue-50 text-blue-800 border-blue-400'
-                  }`}>
-                    {trends.trends.bloodPressure.trend === 'increasing' ? 'เพิ่มขึ้น' :
-                     trends.trends.bloodPressure.trend === 'decreasing' ? 'ลดลง' : 'คงที่'}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                      trends?.trends?.bloodPressure?.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-400' :
+                      trends?.trends?.bloodPressure?.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-400' :
+                      'bg-blue-50 text-blue-800 border-blue-400'
+                    }`}>
+                      {trends?.trends?.bloodPressure?.trend === 'increasing' ? 'เพิ่มขึ้น' :
+                       trends?.trends?.bloodPressure?.trend === 'decreasing' ? 'ลดลง' : 'คงที่'}
+                    </span>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {trends?.trends?.bloodPressure?.trend === 'increasing' ? 
+                        'ความดันเพิ่มขึ้น ควรระวัง' :
+                       trends?.trends?.bloodPressure?.trend === 'decreasing' ? 
+                        'ความดันลดลง เป็นสิ่งดี 👍' : 
+                        'ความดันเสถียร แต่ควรติดตาม'}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -214,34 +293,121 @@ const HealthAnalytics = ({
               <span className="text-2xl mr-2">🍯</span>
               แนวโน้มน้ำตาลในเลือด
             </h3>
-            {trends.trends?.bloodSugar?.trend !== 'insufficient_data' ? (
+            {trends?.trends?.bloodSugar?.trend !== 'insufficient_data' ? (
               <div>
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-amber-100">
                   <span className="text-amber-700 font-medium">ค่าเฉลี่ย</span>
-                  <span className="text-amber-900 font-semibold">{trends.trends.bloodSugar.average || '--'} mg/dL</span>
+                  <span className="text-amber-900 font-semibold">
+                    {trends?.trends?.bloodSugar?.average && !isNaN(trends.trends.bloodSugar.average) 
+                      ? `${Math.round(trends.trends.bloodSugar.average)} mg/dL` 
+                      : 'ไม่มีข้อมูล'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-amber-100">
                   <span className="text-amber-700 font-medium">ความเสี่ยงเบาหวาน</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                    trends.trends.bloodSugar.diabetesRisk === 'high' ? 'bg-red-50 text-red-800 border-red-400' :
-                    trends.trends.bloodSugar.diabetesRisk === 'moderate' ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
-                    'bg-green-50 text-green-800 border-green-400'
-                  }`}>
-                    {trends.trends.bloodSugar.diabetesRisk === 'high' ? 'สูง' :
-                     trends.trends.bloodSugar.diabetesRisk === 'moderate' ? 'ปานกลาง' : 'ต่ำ'}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                      trends?.trends?.bloodSugar?.diabetesRisk === 'high' ? 'bg-red-50 text-red-800 border-red-400' :
+                      trends?.trends?.bloodSugar?.diabetesRisk === 'moderate' ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
+                      'bg-green-50 text-green-800 border-green-400'
+                    }`}>
+                      {trends?.trends?.bloodSugar?.diabetesRisk === 'high' ? 'สูง' :
+                       trends?.trends?.bloodSugar?.diabetesRisk === 'moderate' ? 'ปานกลาง' : 'ต่ำ'}
+                    </span>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {trends?.trends?.bloodSugar?.diabetesRisk === 'high' ? 
+                        'ควรปรึกษาแพทย์เร่งด่วน' :
+                       trends?.trends?.bloodSugar?.diabetesRisk === 'moderate' ? 
+                        'ควรลดของหวานและออกกำลังกาย' : 
+                        'ค่าน้ำตาลปกติ 👍'}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between py-2">
+                <div className="flex items-center justify-between mb-3 py-2 border-b border-amber-100">
                   <span className="text-amber-700 font-medium">แนวโน้ม</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
-                    trends.trends.bloodSugar.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-400' :
-                    trends.trends.bloodSugar.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-400' :
-                    'bg-blue-50 text-blue-800 border-blue-400'
-                  }`}>
-                    {trends.trends.bloodSugar.trend === 'increasing' ? 'เพิ่มขึ้น' :
-                     trends.trends.bloodSugar.trend === 'decreasing' ? 'ลดลง' : 'คงที่'}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border-2 ${
+                      trends?.trends?.bloodSugar?.trend === 'increasing' ? 'bg-red-50 text-red-800 border-red-400' :
+                      trends?.trends?.bloodSugar?.trend === 'decreasing' ? 'bg-green-50 text-green-800 border-green-400' :
+                      'bg-blue-50 text-blue-800 border-blue-400'
+                    }`}>
+                      {trends?.trends?.bloodSugar?.trend === 'increasing' ? 'เพิ่มขึ้น' :
+                       trends?.trends?.bloodSugar?.trend === 'decreasing' ? 'ลดลง' : 'คงที่'}
+                    </span>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {trends?.trends?.bloodSugar?.trend === 'increasing' ? 
+                        'น้ำตาลเพิ่มขึ้น ควรระวัง' :
+                       trends?.trends?.bloodSugar?.trend === 'decreasing' ? 
+                        'น้ำตาลลดลง เป็นสิ่งดี 👍' : 
+                        'น้ำตาลเสถียร ดีมาก 👌'}
+                    </div>
+                  </div>
                 </div>
+
+                {/* เพิ่มการเตือนโรคที่อาจเกิดขึ้น */}
+                {(trends?.trends?.bloodSugar?.diabetesRisk === 'high' || 
+                  trends?.trends?.bloodSugar?.trend === 'increasing') && (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mt-4">
+                    <h4 className="text-red-800 font-bold text-sm mb-2 flex items-center">
+                      <span className="text-lg mr-2">⚠️</span>
+                      โรคที่อาจเกิดขึ้นในอนาคต
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center">
+                        <span className="text-red-600 mr-2">🔹</span>
+                        <span className="text-red-700">
+                          <strong>เบาหวานชนิดที่ 2:</strong> เสี่ยงสูงหากไม่ควบคุมน้ำตาล
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="text-red-600 mr-2">🔹</span>
+                        <span className="text-red-700">
+                          <strong>โรคหัวใจและหลอดเลือด:</strong> จากระดับน้ำตาลสูงเรื้อรัง
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="text-red-600 mr-2">🔹</span>
+                        <span className="text-red-700">
+                          <strong>โรคไต:</strong> เสี่ยงต่อไตเสื่อมจากเบาหวาน
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="text-red-600 mr-2">🔹</span>
+                        <span className="text-red-700">
+                          <strong>ตาเสื่อม:</strong> เสี่ยงต่อจอประสาทตาเสื่อม
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded p-2">
+                      <p className="text-yellow-800 text-xs font-medium">
+                        💡 <strong>การป้องกัน:</strong> ควบคุมอาหาร ออกกำลังกายสม่ำเสมอ ตรวจสุขภาพประจำปี
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {trends?.trends?.bloodSugar?.diabetesRisk === 'moderate' && (
+                  <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 mt-4">
+                    <h4 className="text-yellow-800 font-bold text-sm mb-2 flex items-center">
+                      <span className="text-lg mr-2">⚡</span>
+                      ข้อควรระวัง
+                    </h4>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center">
+                        <span className="text-yellow-600 mr-2">🔸</span>
+                        <span className="text-yellow-700">
+                          <strong>ความดันสูง:</strong> อาจเกิดตามมาหากไม่ดูแล
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="text-yellow-600 mr-2">🔸</span>
+                        <span className="text-yellow-700">
+                          <strong>โรคอ้วน:</strong> เสี่ยงจากการกินหวานมากเกินไป
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอ</p>
@@ -269,19 +435,199 @@ const HealthAnalytics = ({
                   <div className="text-lg text-blue-800 mb-2 font-semibold">
                     เกรด {healthScore.grade}
                   </div>
-                  <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border-2 mb-3 ${
+                  <div className={`inline-block px-4 py-2 rounded-full text-sm font-semibold border-2 mb-3 ${
                     healthScore.score >= 80 ? 'bg-green-50 text-green-800 border-green-400' :
                     healthScore.score >= 60 ? 'bg-yellow-50 text-yellow-800 border-yellow-400' :
                     'bg-red-50 text-red-800 border-red-400'
                   }`}>
                     {healthScore.status}
                   </div>
+                  
+                  {/* คำอธิบายที่เข้าใจง่าย */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <div className="text-sm text-blue-800 font-medium mb-1">
+                      {healthScore.score >= 80 ? '🎉 ยอดเยี่ยม!' : 
+                       healthScore.score >= 60 ? '👍 ดี!' : '⚠️ ควรปรับปรุง'}
+                    </div>
+                    <div className="text-xs text-blue-700">
+                      {healthScore.score >= 80 ? 
+                        'สุขภาพดีมาก รักษาสิ่งที่ทำอยู่ต่อไป' :
+                       healthScore.score >= 60 ? 
+                        'สุขภาพอยู่ในเกณฑ์ดี แต่ยังปรับปรุงได้อีก' :
+                        'ควรใส่ใจสุขภาพมากขึ้น เริ่มจากการออกกำลังกายและกินผักผลไม้'}
+                    </div>
+                  </div>
+                  
+                  {/* วิธีการคิดคะแนน */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 text-left">
+                    <div className="text-sm font-bold text-gray-800 mb-2 flex items-center">
+                      <span className="mr-2">📋</span>
+                      วิธีการคิดคะแนน (คลิกเพื่อดูรายละเอียด)
+                    </div>
+                    <details className="text-xs text-gray-700">
+                      <summary className="cursor-pointer hover:text-blue-600 font-medium">
+                        คะแนนแบ่งเป็น 4 หมวด ๆ ละ 25 คะแนน
+                      </summary>
+                      <div className="mt-2 space-y-1 pl-4">
+                        <div className="flex justify-between">
+                          <span>💪 ดัชนีมวลกาย (BMI)</span>
+                          <span className="font-medium">25 คะแนน</span>
+                        </div>
+                        <div className="text-xs text-gray-500 pl-4">
+                          • 18.5-24.9: 25 คะแนน (ปกติ)
+                          • 25-29.9: 15 คะแนน (เกิน)
+                          • อื่นๆ: 5 คะแนน (ผิดปกติ)
+                        </div>
+                        <div className="flex justify-between">
+                          <span>💗 ความดันโลหิต</span>
+                          <span className="font-medium">25 คะแนน</span>
+                        </div>
+                        <div className="text-xs text-gray-500 pl-4">
+                          • น้อยกว่า 120/80: 25 คะแนน (ปกติ)
+                          • 120-139/80-89: 15 คะแนน (เฝ้าระวัง)
+                          • 140/90 ขึ้นไป: 5 คะแนน (สูง)
+                        </div>
+                        <div className="flex justify-between">
+                          <span>🍯 น้ำตาลในเลือด</span>
+                          <span className="font-medium">25 คะแนน</span>
+                        </div>
+                        <div className="text-xs text-gray-500 pl-4">
+                          • น้อยกว่า 100: 25 คะแนน (ปกติ)
+                          • 100-125: 15 คะแนน (เฝ้าระวัง)
+                          • 126 ขึ้นไป: 5 คะแนน (เบาหวาน)
+                        </div>
+                        <div className="flex justify-between">
+                          <span>💓 อัตราการเต้นหัวใจ</span>
+                          <span className="font-medium">25 คะแนน</span>
+                        </div>
+                        <div className="text-xs text-gray-500 pl-4">
+                          • 60-100: 25 คะแนน (ปกติ)
+                          • 50-59, 101-110: 15 คะแนน (เฝ้าระวัง)
+                          • อื่นๆ: 5 คะแนน (ผิดปกติ)
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                  
                   <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
                     ประเมินจาก {healthScore.factors}/4 ตัวชี้วัด • ข้อมูลครบ {Math.round(healthInsights?.dataCompleteness || 0)}%
                   </div>
+
+                  {/* แสดงปัจจัยเสี่ยง */}
                   {healthInsights && healthInsights.riskFactors > 0 && (
-                    <div className="mt-3 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                      ⚠️ พบปัจจัยเสี่ยง {healthInsights.riskFactors} ด้าน
+                    <div className="mt-3">
+                      <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200 mb-2">
+                        ⚠️ พบปัจจัยเสี่ยง {healthInsights.riskFactors} ด้าน - ควรปรึกษาแพทย์
+                      </div>
+                      
+                      {/* รายละเอียดความเสี่ยง */}
+                      <details className="text-left bg-red-50 border border-red-200 rounded p-3">
+                        <summary className="cursor-pointer text-red-800 font-medium text-sm hover:text-red-600">
+                          🔍 คลิกดูรายละเอียดปัจจัยเสี่ยง
+                        </summary>
+                        <div className="mt-2 space-y-2 text-xs">
+                          {/* ตรวจสอบ BMI */}
+                          {(() => {
+                            const latestWeight = recentMetrics?.find(m => m.weight_kg);
+                            const bmi = latestWeight && userProfile?.height_cm ? 
+                              (latestWeight.weight_kg / Math.pow(userProfile.height_cm / 100, 2)) : null;
+                            
+                            if (bmi && (bmi < 18.5 || bmi >= 25)) {
+                              return (
+                                <div className="flex items-start">
+                                  <span className="text-red-500 mr-2 mt-0.5">🔸</span>
+                                  <div>
+                                    <div className="font-medium text-red-700">
+                                      ดัชนีมวลกาย (BMI: {bmi.toFixed(1)})
+                                    </div>
+                                    <div className="text-red-600">
+                                      {bmi < 18.5 ? 'น้ำหนักต่ำ - เสี่ยงต่อการขาดสารอาหาร' :
+                                       bmi >= 30 ? 'อ้วนมาก - เสี่ยงต่อโรคหัวใจ เบาหวาน' :
+                                       'น้ำหนักเกิน - เสี่ยงต่อความดันสูง'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* ตรวจสอบความดัน */}
+                          {(() => {
+                            const latestBP = recentMetrics?.find(m => m.systolic_bp && m.diastolic_bp);
+                            if (latestBP && (latestBP.systolic_bp >= 140 || latestBP.diastolic_bp >= 90)) {
+                              return (
+                                <div className="flex items-start">
+                                  <span className="text-red-500 mr-2 mt-0.5">🔸</span>
+                                  <div>
+                                    <div className="font-medium text-red-700">
+                                      ความดันโลหิตสูง ({latestBP.systolic_bp}/{latestBP.diastolic_bp})
+                                    </div>
+                                    <div className="text-red-600">
+                                      เสี่ยงต่อโรคหัวใจ โรคหลอดเลือดสมอง ไตเสื่อม
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* ตรวจสอบน้ำตาล */}
+                          {(() => {
+                            const latestSugar = recentMetrics?.find(m => m.blood_sugar);
+                            if (latestSugar && latestSugar.blood_sugar >= 126) {
+                              return (
+                                <div className="flex items-start">
+                                  <span className="text-red-500 mr-2 mt-0.5">🔸</span>
+                                  <div>
+                                    <div className="font-medium text-red-700">
+                                      น้ำตาลในเลือดสูง ({latestSugar.blood_sugar} mg/dL)
+                                    </div>
+                                    <div className="text-red-600">
+                                      เสี่ยงต่อเบาหวาน โรคหัวใจ ไตเสื่อม ตาบอด
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* ตรวจสอบอัตราการเต้นหัวใจ */}
+                          {(() => {
+                            const latestHR = recentMetrics?.find(m => m.heart_rate);
+                            if (latestHR && (latestHR.heart_rate < 60 || latestHR.heart_rate > 100)) {
+                              return (
+                                <div className="flex items-start">
+                                  <span className="text-red-500 mr-2 mt-0.5">🔸</span>
+                                  <div>
+                                    <div className="font-medium text-red-700">
+                                      อัตราการเต้นหัวใจผิดปกติ ({latestHR.heart_rate} ครั้ง/นาที)
+                                    </div>
+                                    <div className="text-red-600">
+                                      {latestHR.heart_rate < 60 ? 
+                                        'เต้นช้า - อาจมีปัญหาระบบนำไฟฟ้าหัวใจ' :
+                                        'เต้นเร็ว - เสี่ยงต่อหัวใจล้มเหลว'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {/* ข้อแนะนำ */}
+                          <div className="mt-3 pt-2 border-t border-red-300">
+                            <div className="font-medium text-red-700 mb-1">💡 ข้อแนะนำ:</div>
+                            <div className="text-red-600">
+                              • ปรึกษาแพทย์เพื่อประเมินความเสี่ยงโดยละเอียด
+                              • ตรวจสุขภาพประจำปีสม่ำเสมอ
+                              • ปรับเปลี่ยนวิถีชีวิตให้ดีขึ้น
+                            </div>
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   )}
                 </div>
@@ -312,93 +658,384 @@ const HealthAnalytics = ({
     </div>
   );
 
-  const renderPredictionsTab = () => (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-blue-800 mb-6">การพยากรณ์สุขภาพ</h2>
-      {predictions ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* BMI Prediction */}
-          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-emerald-300 shadow-lg">
-            <h3 className="text-lg font-bold text-emerald-800 mb-4 border-b-2 border-emerald-200 pb-2">พยากรณ์ BMI (6 เดือนข้างหน้า)</h3>
-            {predictions.bmi?.prediction !== 'insufficient_data' ? (
-              <div>
-                <div className="text-2xl font-bold text-emerald-900 mb-2">
-                  {predictions.bmi.prediction || '--'}
-                </div>
-                <p className="text-emerald-700 text-sm font-medium">{predictions.bmi.recommendation || 'ไม่มีคำแนะนำ'}</p>
-              </div>
-            ) : (
-              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการพยากรณ์</p>
-            )}
-          </div>
+  const renderPredictionsTab = () => {
+    // วิเคราะห์ข้อมูลโรคประจำตัวและยา
+    const medicalConditions = userProfile?.medical_conditions?.toLowerCase() || '';
+    const medications = userProfile?.medications?.toLowerCase() || '';
+    
+    const hasHypertension = medicalConditions.includes('ความดันสูง') || 
+                           medicalConditions.includes('hypertension') ||
+                           medications.includes('amlodipine') || 
+                           medications.includes('amlopine') ||
+                           medications.includes('แอมโลดิปีน');
+                           
+    const hasDiabetes = medicalConditions.includes('เบาหวาน') || 
+                       medicalConditions.includes('diabetes') ||
+                       medications.includes('metformin') || 
+                       medications.includes('เมตฟอร์มิน');
+                       
+    const hasHeartDisease = medicalConditions.includes('หัวใจ') || 
+                           medicalConditions.includes('heart') ||
+                           medicalConditions.includes('โรคหัวใจ');
 
-          {/* Blood Pressure Prediction */}
-          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
-            <h3 className="text-lg font-bold text-red-800 mb-4 border-b-2 border-red-200 pb-2">พยากรณ์ความดันโลหิต</h3>
-            {predictions.bloodPressure?.prediction !== 'insufficient_data' ? (
-              <div>
-                <div className="text-xl font-bold text-red-900 mb-2">
-                  {predictions.bloodPressure.prediction?.systolic || '--'}/
-                  {predictions.bloodPressure.prediction?.diastolic || '--'}
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-blue-800 mb-6">การพยากรณ์สุขภาพ (รวมข้อมูลโรคประจำตัว)</h2>
+        
+        {/* แสดงข้อมูลโรคประจำตัวและยา */}
+        {(userProfile?.medical_conditions || userProfile?.medications) && (
+          <div className="bg-amber-50 backdrop-blur-lg rounded-lg p-6 border-2 border-amber-300 shadow-lg">
+            <h3 className="text-lg font-bold text-amber-800 mb-4 border-b-2 border-amber-200 pb-2 flex items-center">
+              <span className="mr-2">🏥</span>
+              ข้อมูลการรักษาของคุณ
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {userProfile?.medical_conditions && (
+                <div className="bg-white p-4 rounded-lg border border-amber-200">
+                  <h4 className="font-bold text-amber-700 mb-2 flex items-center">
+                    <span className="mr-2">📋</span>
+                    โรคประจำตัว
+                  </h4>
+                  <p className="text-amber-800 text-sm">{userProfile.medical_conditions}</p>
+                  
+                  {/* แสดงการวิเคราะห์โรค */}
+                  <div className="mt-3 space-y-1 text-xs">
+                    {hasHypertension && (
+                      <div className="bg-red-50 text-red-700 px-2 py-1 rounded border border-red-200">
+                        🔍 ตรวจพบ: ความดันโลหิตสูง - ติดตามความดันสม่ำเสมอ
+                      </div>
+                    )}
+                    {hasDiabetes && (
+                      <div className="bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-200">
+                        🔍 ตรวจพบ: เบาหวาน - ควบคุมน้ำตาลในเลือด
+                      </div>
+                    )}
+                    {hasHeartDisease && (
+                      <div className="bg-pink-50 text-pink-700 px-2 py-1 rounded border border-pink-200">
+                        🔍 ตรวจพบ: โรคหัวใจ - ติดตามอัตราการเต้นหัวใจ
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm text-red-700 mb-2 font-medium">
-                  ระดับความเสี่ยง: {predictions.bloodPressure.riskLevel === 'high' ? 'สูง' : 'ปานกลาง'}
+              )}
+              
+              {userProfile?.medications && (
+                <div className="bg-white p-4 rounded-lg border border-amber-200">
+                  <h4 className="font-bold text-amber-700 mb-2 flex items-center">
+                    <span className="mr-2">💊</span>
+                    ยาที่ทาน
+                  </h4>
+                  <p className="text-amber-800 text-sm">{userProfile.medications}</p>
+                  
+                  {/* แสดงข้อมูลยา */}
+                  <div className="mt-3 space-y-1 text-xs">
+                    {medications.includes('amlodipine') || medications.includes('แอมโลดิปีน') && (
+                      <div className="bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
+                        💊 Amlodipine - ยาลดความดัน (ระวังข้อเท้าบวม)
+                      </div>
+                    )}
+                    {medications.includes('metformin') || medications.includes('เมตฟอร์มิน') && (
+                      <div className="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-200">
+                        💊 Metformin - ยาเบาหวาน (ทานหลังอาหาร)
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <p className="text-red-700 text-sm font-medium">{predictions.bloodPressure.recommendation || 'ไม่มีคำแนะนำ'}</p>
-              </div>
-            ) : (
-              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการพยากรณ์</p>
-            )}
-          </div>
-
-          {/* Diabetes Risk */}
-          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-amber-300 shadow-lg">
-            <h3 className="text-lg font-bold text-amber-800 mb-4 border-b-2 border-amber-200 pb-2">ความเสี่ยงเบาหวาน</h3>
-            {predictions.diabetesRisk?.prediction !== 'insufficient_data' ? (
-              <div>
-                <div className="text-xl font-bold text-amber-900 mb-2">
-                  {predictions.diabetesRisk.riskPercentage || '--'}
-                </div>
-                <p className="text-amber-700 text-sm font-medium">{predictions.diabetesRisk.recommendation || 'ไม่มีคำแนะนำ'}</p>
-              </div>
-            ) : (
-              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการประเมิน</p>
-            )}
-          </div>
-
-          {/* Overall Health Prediction */}
-          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
-            <h3 className="text-lg font-bold text-blue-800 mb-4 border-b-2 border-blue-200 pb-2">แนวโน้มสุขภาพโดยรวม</h3>
-            <div>
-              <div className={`text-xl font-bold mb-2 ${
-                predictions.overallHealth?.prediction === 'improving' ? 'text-green-800' :
-                predictions.overallHealth?.prediction === 'stable' ? 'text-blue-800' :
-                'text-red-800'
-              }`}>
-                {predictions.overallHealth?.prediction === 'improving' ? 'ดีขึ้น' :
-                 predictions.overallHealth?.prediction === 'stable' ? 'คงที่' : 
-                 predictions.overallHealth?.prediction === 'declining' ? 'แย่ลง' : '--'}
-              </div>
-              <p className="text-blue-700 text-sm font-medium">{predictions.overallHealth?.recommendation || 'ไม่มีคำแนะนำ'}</p>
+              )}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="text-center py-12 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
-          <div className="text-6xl mb-4">🔮</div>
-          <h3 className="text-xl font-bold text-blue-800 mb-2">ไม่มีข้อมูลการพยากรณ์</h3>
-          <p className="text-blue-600 font-medium">กรุณาบันทึกข้อมูลสุขภาพเพิ่มเติมเพื่อรับการพยากรณ์</p>
-        </div>
-      )}
-    </div>
-  );
+        )}
+
+        {predictions ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* BMI Prediction with Medical Context */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-emerald-300 shadow-lg">
+              <h3 className="text-lg font-bold text-emerald-800 mb-4 border-b-2 border-emerald-200 pb-2">พยากรณ์ BMI (6 เดือนข้างหน้า)</h3>
+              {predictions.bmi?.prediction !== 'insufficient_data' ? (
+                <div>
+                  <div className="text-2xl font-bold text-emerald-900 mb-2">
+                    {predictions.bmi.prediction || '--'}
+                  </div>
+                  <p className="text-emerald-700 text-sm font-medium mb-3">{predictions.bmi.recommendation || 'ไม่มีคำแนะนำ'}</p>
+                  
+                  {/* คำแนะนำเฉพาะโรค */}
+                  {(hasHypertension || hasDiabetes || hasHeartDisease) && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs">
+                      <div className="font-bold text-emerald-800 mb-1">🏥 คำแนะนำพิเศษสำหรับโรคของคุณ:</div>
+                      {hasHypertension && (
+                        <div className="text-emerald-700 mb-1">• ควบคุมน้ำหนักช่วยลดความดันโลหิต</div>
+                      )}
+                      {hasDiabetes && (
+                        <div className="text-emerald-700 mb-1">• น้ำหนักเหมาะสมช่วยควบคุมน้ำตาลได้ดีขึ้น</div>
+                      )}
+                      {hasHeartDisease && (
+                        <div className="text-emerald-700">• น้ำหนักปกติลดภาระหัวใจ</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการพยากรณ์</p>
+              )}
+            </div>
+
+            {/* Blood Pressure Prediction with Medical Context */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
+              <h3 className="text-lg font-bold text-red-800 mb-4 border-b-2 border-red-200 pb-2">พยากรณ์ความดันโลหิต</h3>
+              {predictions.bloodPressure?.prediction !== 'insufficient_data' ? (
+                <div>
+                  <div className="text-xl font-bold text-red-900 mb-2">
+                    {predictions.bloodPressure.prediction?.systolic || '--'}/
+                    {predictions.bloodPressure.prediction?.diastolic || '--'}
+                  </div>
+                  <div className="text-sm text-red-700 mb-2 font-medium">
+                    ระดับความเสี่ยง: {predictions.bloodPressure.riskLevel === 'high' ? 'สูง' : 'ปานกลาง'}
+                  </div>
+                  <p className="text-red-700 text-sm font-medium mb-3">{predictions.bloodPressure.recommendation || 'ไม่มีคำแนะนำ'}</p>
+                  
+                  {/* คำแนะนำเฉพาะสำหรับผู้ป่วยความดันสูง */}
+                  {hasHypertension && (
+                    <div className="bg-red-50 border border-red-200 rounded p-3 text-xs">
+                      <div className="font-bold text-red-800 mb-1">🏥 สำหรับผู้ป่วยความดันสูง:</div>
+                      <div className="text-red-700 space-y-1">
+                        <div>• ทานยาตามเวลาที่แพทย์กำหนด</div>
+                        <div>• วัดความดันวันละ 2 ครั้ง (เช้า-เย็น)</div>
+                        <div>• หลีกเลี่ยงอาหารเค็ม น้ำตาลสูง</div>
+                        {medications.includes('amlodipine') && (
+                          <div>• ระวังข้อเท้าบวมจากยา Amlodipine</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการพยากรณ์</p>
+              )}
+            </div>
+
+            {/* Enhanced Diabetes Risk with Medical Context */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-amber-300 shadow-lg">
+              <h3 className="text-lg font-bold text-amber-800 mb-4 border-b-2 border-amber-200 pb-2 flex items-center">
+                <span className="mr-2">🍯</span>
+                ความเสี่ยงเบาหวาน
+                <span className="ml-2 text-xs bg-amber-50 text-amber-600 px-2 py-1 rounded">(ในอนาคต)</span>
+              </h3>
+              {predictions.diabetesRisk?.prediction !== 'insufficient_data' ? (
+                <div>
+                  <div className="text-2xl font-bold text-amber-900 mb-2">
+                    {predictions.diabetesRisk.riskPercentage || '--'}
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded text-sm mb-3">
+                    <div className="font-medium text-gray-700 mb-1">🔍 หมายความว่า:</div>
+                    <div className="text-gray-600">
+                      ตัวเลขนี้แสดงโอกาสที่คุณอาจเป็นเบาหวานในอนาคต ยิ่งต่ำยิ่งดี
+                    </div>
+                  </div>
+                  <p className="text-amber-700 text-sm font-medium mb-3">{predictions.diabetesRisk.recommendation || 'ไม่มีคำแนะนำ'}</p>
+                  
+                  {/* คำแนะนำเฉพาะสำหรับผู้ป่วยเบาหวาน */}
+                  {hasDiabetes && (
+                    <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs">
+                      <div className="font-bold text-amber-800 mb-1">🏥 สำหรับผู้ป่วยเบาหวาน:</div>
+                      <div className="text-amber-700 space-y-1">
+                        <div>• ตรวจน้ำตาลก่อนอาหารและหลังอาหาร 2 ชม.</div>
+                        <div>• ทานยาเบาหวานตามเวลา หลังอาหาร</div>
+                        <div>• หลีกเลี่ยงขนมหวาน อาหารแป้ง</div>
+                        <div>• ตรวจ HbA1c ทุก 3 เดือน</div>
+                        {medications.includes('metformin') && (
+                          <div>• Metformin ช่วยควบคุมน้ำตาล ทานหลังอาหาร</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg border-2 border-gray-200 text-center font-medium">ไม่มีข้อมูลเพียงพอในการประเมิน</p>
+              )}
+            </div>
+
+            {/* Overall Health Prediction with Medical Context */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
+              <h3 className="text-lg font-bold text-blue-800 mb-4 border-b-2 border-blue-200 pb-2 flex items-center">
+                <span className="mr-2">📈</span>
+                แนวโน้มสุขภาพโดยรวม
+                <span className="ml-2 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">(6 เดือนข้างหน้า)</span>
+              </h3>
+              <div>
+                <div className={`text-2xl font-bold mb-2 ${
+                  predictions.overallHealth?.prediction === 'improving' ? 'text-green-800' :
+                  predictions.overallHealth?.prediction === 'stable' ? 'text-blue-800' :
+                  'text-red-800'
+                }`}>
+                  {predictions.overallHealth?.prediction === 'improving' ? '📈 ดีขึ้น' :
+                   predictions.overallHealth?.prediction === 'stable' ? '➡️ คงที่' : 
+                   predictions.overallHealth?.prediction === 'declining' ? '📉 แย่ลง' : '--'}
+                </div>
+                <div className="bg-gray-50 p-3 rounded text-sm mb-3">
+                  <div className="font-medium text-gray-700 mb-1">🔍 หมายความว่า:</div>
+                  <div className="text-gray-600">
+                    {predictions.overallHealth?.prediction === 'improving' ? 
+                      'สุขภาพของคุณมีแนวโน้มดีขึ้น ถ้าคุณรักษาพฤติกรรมดีๆ ต่อไป' :
+                     predictions.overallHealth?.prediction === 'stable' ? 
+                      'สุขภาพจะคงที่ ควรพยายามปรับปรุงให้ดีขึ้น' : 
+                      'สุขภาพอาจแย่ลง ควรเปลี่ยนพฤติกรรมเร่งด่วน'}
+                  </div>
+                </div>
+                <p className="text-blue-700 text-sm font-medium mb-3">{predictions.overallHealth?.recommendation || 'ไม่มีคำแนะนำ'}</p>
+                
+                {/* คำแนะนำเฉพาะโรค */}
+                {(hasHypertension || hasDiabetes || hasHeartDisease) && (
+                  <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs">
+                    <div className="font-bold text-blue-800 mb-1">🏥 ติดตามพิเศษสำหรับโรคของคุณ:</div>
+                    <div className="text-blue-700 space-y-1">
+                      {hasHypertension && (
+                        <div>• ความดันโลหิต: เป้าหมาย น้อยกว่า 130/80</div>
+                      )}
+                      {hasDiabetes && (
+                        <div>• น้ำตาลในเลือด: เป้าหมาย 80-130 mg/dL (ก่อนอาหาร)</div>
+                      )}
+                      {hasHeartDisease && (
+                        <div>• อัตราการเต้นหัวใจ: เป้าหมาย 60-100 ครั้ง/นาที</div>
+                      )}
+                      <div className="mt-2 pt-2 border-t border-blue-300">
+                        <div>📅 นัดตรวจติดตามสม่ำเสมอทุก 3-6 เดือน</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
+            <div className="text-6xl mb-4">🔮</div>
+            <h3 className="text-xl font-bold text-blue-800 mb-2">ไม่มีข้อมูลการพยากรณ์</h3>
+            <p className="text-blue-600 font-medium">กรุณาบันทึกข้อมูลสุขภาพเพิ่มเติมเพื่อรับการพยากรณ์</p>
+            {(userProfile?.medical_conditions || userProfile?.medications) && (
+              <p className="text-blue-500 text-sm mt-2">
+                💡 เนื่องจากคุณมีโรคประจำตัว การพยากรณ์จะแม่นยำยิ่งขึ้นเมื่อมีข้อมูลสุขภาพเพิ่มเติม
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderInsightsTab = () => {
     const healthInsights = generateHealthInsights ? generateHealthInsights() : null;
     
+    // วิเคราะห์ข้อมูลโรคประจำตัวและยา
+    const medicalConditions = userProfile?.medical_conditions?.toLowerCase() || '';
+    const medications = userProfile?.medications?.toLowerCase() || '';
+    
+    const hasHypertension = medicalConditions.includes('ความดันสูง') || 
+                           medicalConditions.includes('hypertension') ||
+                           medications.includes('amlodipine') || 
+                           medications.includes('amlopine') ||
+                           medications.includes('แอมโลดิปีน');
+                           
+    const hasDiabetes = medicalConditions.includes('เบาหวาน') || 
+                       medicalConditions.includes('diabetes') ||
+                       medications.includes('metformin') || 
+                       medications.includes('เมตฟอร์มิน');
+                       
+    const hasHeartDisease = medicalConditions.includes('หัวใจ') || 
+                           medicalConditions.includes('heart') ||
+                           medicalConditions.includes('โรคหัวใจ');
+
+    // สร้างข้อมูลเชิงลึกเฉพาะโรค
+    const generateMedicalInsights = () => {
+      const insights = [];
+      
+      if (hasHypertension) {
+        // วิเคราะห์ความดันล่าสุด
+        const latestBP = recentMetrics?.find(m => m.systolic_bp && m.diastolic_bp);
+        if (latestBP) {
+          if (latestBP.systolic_bp >= 140 || latestBP.diastolic_bp >= 90) {
+            insights.push({
+              type: 'warning',
+              condition: 'ความดันสูง',
+              message: `ความดันปัจจุบัน ${latestBP.systolic_bp}/${latestBP.diastolic_bp} สูงกว่าเป้าหมาย (<130/80)`,
+              advice: 'ควรปรับยาหรือปรึกษาแพทย์'
+            });
+          } else {
+            insights.push({
+              type: 'good',
+              condition: 'ความดันสูง',
+              message: `ความดันปัจจุบัน ${latestBP.systolic_bp}/${latestBP.diastolic_bp} ควบคุมได้ดี`,
+              advice: 'รักษาการทานยาและวิถีชีวิตดี ๆ ต่อไป'
+            });
+          }
+        }
+      }
+      
+      if (hasDiabetes) {
+        // วิเคราะห์น้ำตาลล่าสุด
+        const latestSugar = recentMetrics?.find(m => m.blood_sugar);
+        if (latestSugar) {
+          if (latestSugar.blood_sugar >= 130) {
+            insights.push({
+              type: 'warning',
+              condition: 'เบาหวาน',
+              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL สูงกว่าเป้าหมาย (80-130)`,
+              advice: 'ควรปรับอาหารและการทานยา'
+            });
+          } else if (latestSugar.blood_sugar < 80) {
+            insights.push({
+              type: 'warning',
+              condition: 'เบาหวาน',
+              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL ต่ำเกินไป`,
+              advice: 'ระวังน้ำตาลต่ำ ควรรับประทานอาหารเพิ่ม'
+            });
+          } else {
+            insights.push({
+              type: 'good',
+              condition: 'เบาหวาน',
+              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL อยู่ในเป้าหมาย`,
+              advice: 'ควบคุมได้ดี รักษาระบบการทานยาต่อไป'
+            });
+          }
+        }
+      }
+      
+      if (hasHeartDisease) {
+        // วิเคราะห์อัตราการเต้นหัวใจ
+        const latestHR = recentMetrics?.find(m => m.heart_rate);
+        if (latestHR) {
+          if (latestHR.heart_rate < 60) {
+            insights.push({
+              type: 'info',
+              condition: 'โรคหัวใจ',
+              message: `อัตราการเต้นหัวใจ ${latestHR.heart_rate} ครั้ง/นาที ช้ากว่าปกติ`,
+              advice: 'ควรติดตามอาการและปรึกษาแพทย์'
+            });
+          } else if (latestHR.heart_rate > 100) {
+            insights.push({
+              type: 'warning',
+              condition: 'โรคหัวใจ',
+              message: `อัตราการเต้นหัวใจ ${latestHR.heart_rate} ครั้ง/นาที เร็วกว่าปกติ`,
+              advice: 'ควรพักผ่อนและหลีกเลี่ยงความเครียด'
+            });
+          } else {
+            insights.push({
+              type: 'good',
+              condition: 'โรคหัวใจ',
+              message: `อัตราการเต้นหัวใจ ${latestHR.heart_rate} ครั้ง/นาที อยู่ในเกณฑ์ปกติ`,
+              advice: 'สุขภาพหัวใจดี รักษาต่อไป'
+            });
+          }
+        }
+      }
+      
+      return insights;
+    };
+
+    const medicalInsights = generateMedicalInsights();
+    
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-blue-800 mb-6">ข้อมูลเชิงลึกสุขภาพ (วิเคราะห์จากข้อมูลจริง)</h2>
+        <h2 className="text-2xl font-bold text-blue-800 mb-6">ข้อมูลเชิงลึกสุขภาพ (รวมข้อมูลโรคประจำตัว)</h2>
         
         {healthInsights ? (
           <div className="space-y-6">
@@ -433,12 +1070,61 @@ const HealthAnalytics = ({
               </div>
             </div>
 
-            {/* Health Insights */}
+            {/* Medical Condition-Specific Insights */}
+            {medicalInsights.length > 0 && (
+              <div className="bg-purple-50 backdrop-blur-lg rounded-lg p-6 border-2 border-purple-300 shadow-lg">
+                <h3 className="text-lg font-bold text-purple-800 mb-4 border-b-2 border-purple-200 pb-2">
+                  <span className="mr-2">🏥</span>
+                  ข้อมูลเชิงลึกเฉพาะโรคของคุณ
+                </h3>
+                <div className="space-y-4">
+                  {medicalInsights.map((insight, index) => (
+                    <div key={index} className={`p-4 rounded-lg border-2 ${
+                      insight.type === 'warning' ? 'bg-red-50 border-red-200' :
+                      insight.type === 'good' ? 'bg-green-50 border-green-200' :
+                      'bg-blue-50 border-blue-200'
+                    }`}>
+                      <div className="flex items-start">
+                        <span className="mr-3 mt-0.5">
+                          {insight.type === 'warning' ? '⚠️' : 
+                           insight.type === 'good' ? '✅' : 'ℹ️'}
+                        </span>
+                        <div className="flex-1">
+                          <div className={`font-bold mb-1 ${
+                            insight.type === 'warning' ? 'text-red-800' :
+                            insight.type === 'good' ? 'text-green-800' :
+                            'text-blue-800'
+                          }`}>
+                            {insight.condition}
+                          </div>
+                          <div className={`text-sm mb-2 ${
+                            insight.type === 'warning' ? 'text-red-700' :
+                            insight.type === 'good' ? 'text-green-700' :
+                            'text-blue-700'
+                          }`}>
+                            {insight.message}
+                          </div>
+                          <div className={`text-xs font-medium ${
+                            insight.type === 'warning' ? 'text-red-600' :
+                            insight.type === 'good' ? 'text-green-600' :
+                            'text-blue-600'
+                          }`}>
+                            💡 {insight.advice}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* General Health Insights */}
             {healthInsights.insights && healthInsights.insights.length > 0 && (
               <div className="bg-red-50 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
                 <h3 className="text-lg font-bold text-red-800 mb-4 border-b-2 border-red-200 pb-2">
                   <span className="mr-2">⚠️</span>
-                  ประเด็นที่ควรให้ความสำคัญ
+                  ประเด็นทั่วไปที่ควรให้ความสำคัญ
                 </h3>
                 <div className="space-y-3">
                   {healthInsights.insights.map((insight, index) => (
@@ -450,18 +1136,79 @@ const HealthAnalytics = ({
               </div>
             )}
 
-            {/* Recommendations */}
+            {/* Enhanced Recommendations with Medical Context */}
             <div className="bg-green-50 backdrop-blur-lg rounded-lg p-6 border-2 border-green-300 shadow-lg">
               <h3 className="text-lg font-bold text-green-800 mb-4 border-b-2 border-green-200 pb-2">
                 <span className="mr-2">💡</span>
-                คำแนะนำเฉพาะบุคคล
+                คำแนะนำเฉพาะบุคคล (รวมข้อมูลโรคประจำตัว)
               </h3>
               <div className="space-y-4">
+                {/* Medical-Specific Recommendations */}
+                {(hasHypertension || hasDiabetes || hasHeartDisease) && (
+                  <div className="p-4 bg-white rounded-lg border-2 border-indigo-200">
+                    <h4 className="font-bold text-indigo-800 mb-3 flex items-center">
+                      <span className="mr-2">🏥</span>
+                      คำแนะนำเฉพาะโรคประจำตัว
+                    </h4>
+                    <div className="space-y-3">
+                      {hasHypertension && (
+                        <div className="bg-red-50 p-3 rounded border border-red-200">
+                          <div className="font-medium text-red-800 mb-1">ความดันโลหิตสูง</div>
+                          <ul className="text-red-700 text-sm space-y-1">
+                            <li>• ทานยาตามเวลาที่แพทย์กำหนดเสมอ</li>
+                            <li>• วัดความดัน 2 ครั้ง/วัน บันทึกผล</li>
+                            <li>• หลีกเลี่ยงอาหารเค็ม น้ำตาลสูง เครื่องดื่มแอลกอฮอล์</li>
+                            <li>• ออกกำลังกายแบบแอโรบิก 30 นาที/วัน</li>
+                            {medications.includes('amlodipine') && (
+                              <li>• ระวังข้อเท้าบวมจาก Amlodipine หากมีอาการรุนแรงแจ้งแพทย์</li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {hasDiabetes && (
+                        <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                          <div className="font-medium text-yellow-800 mb-1">เบาหวาน</div>
+                          <ul className="text-yellow-700 text-sm space-y-1">
+                            <li>• ตรวจน้ำตาลก่อนอาหาร (เป้าหมาย 80-130 mg/dL)</li>
+                            <li>• ทานยาเบาหวานหลังอาหารเสมอ</li>
+                            <li>• กินอาหารตามเวลา หลีกเลี่ยงขนมหวาน</li>
+                            <li>• ตรวจ HbA1c ทุก 3 เดือน (เป้าหมาย น้อยกว่า 7%)</li>
+                            <li>• ดูแลเท้า ตรวจสายตาประจำปี</li>
+                            {medications.includes('metformin') && (
+                              <li>• Metformin ช่วยควบคุมน้ำตาล ทานหลังอาหารเพื่อลดผลข้างเคียง</li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {hasHeartDisease && (
+                        <div className="bg-pink-50 p-3 rounded border border-pink-200">
+                          <div className="font-medium text-pink-800 mb-1">โรคหัวใจ</div>
+                          <ul className="text-pink-700 text-sm space-y-1">
+                            <li>• ติดตามอัตราการเต้นหัวใจสม่ำเสมอ</li>
+                            <li>• หลีกเลี่ยงกิจกรรมหนักเกินไป หากมีอาการเจ็บหน้าอกหยุดทันที</li>
+                            <li>• ลดเกลือ ไขมันอิ่มตัว เพิ่มผักผลไม้</li>
+                            <li>• นัดตรวจติดตามกับแพทย์หัวใจตามกำหนด</li>
+                            <li>• เตรียมยาแก้เจ็บหน้าอกฉุกเฉินติดตัวเสมอ</li>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* General Recommendations */}
                 {healthInsights.recommendations?.diet && healthInsights.recommendations.diet.length > 0 && (
                   <div className="p-4 bg-white rounded-lg border-2 border-green-200">
                     <h4 className="font-bold text-green-800 mb-2 flex items-center">
                       <span className="mr-2">🍎</span>
                       อาหาร
+                      {(hasHypertension || hasDiabetes) && (
+                        <span className="ml-2 text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
+                          ปรับแต่งสำหรับโรคของคุณ
+                        </span>
+                      )}
                     </h4>
                     <ul className="list-disc list-inside space-y-1 text-green-700 text-sm font-medium">
                       {healthInsights.recommendations.diet.map((item, index) => (
@@ -476,12 +1223,22 @@ const HealthAnalytics = ({
                     <h4 className="font-bold text-blue-800 mb-2 flex items-center">
                       <span className="mr-2">🏃‍♂️</span>
                       การออกกำลังกาย
+                      {(hasHeartDisease || hasHypertension) && (
+                        <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">
+                          ปรับแต่งสำหรับโรคของคุณ
+                        </span>
+                      )}
                     </h4>
                     <ul className="list-disc list-inside space-y-1 text-blue-700 text-sm font-medium">
                       {healthInsights.recommendations.exercise.map((item, index) => (
                         <li key={index}>{item}</li>
                       ))}
                     </ul>
+                    {(hasHeartDisease || hasHypertension) && (
+                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-600">
+                        ⚠️ หยุดออกกำลังกายทันทีหากมีอาการเจ็บหน้าอก เหนื่อยผิดปกติ หรือใจสั่น
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -514,6 +1271,37 @@ const HealthAnalytics = ({
                 )}
               </div>
             </div>
+
+            {/* Medication Monitoring */}
+            {userProfile?.medications && (
+              <div className="bg-orange-50 backdrop-blur-lg rounded-lg p-6 border-2 border-orange-300 shadow-lg">
+                <h3 className="text-lg font-bold text-orange-800 mb-4 border-b-2 border-orange-200 pb-2">
+                  <span className="mr-2">💊</span>
+                  การติดตามผลข้างเคียงยา
+                </h3>
+                <div className="space-y-3">
+                  {medications.includes('amlodipine') && (
+                    <div className="p-3 bg-white rounded border border-orange-200">
+                      <div className="font-medium text-orange-800 mb-1">Amlodipine (ยาลดความดัน)</div>
+                      <div className="text-orange-700 text-sm">
+                        <div className="mb-1">🔍 ติดตามอาการ: ข้อเท้าบวม, วิงเวียน, ใจสั่น</div>
+                        <div>💡 คำแนะนำ: ทานก่อนอาหาร ดื่มน้ำเพียงพอ หากบวมมากแจ้งแพทย์</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {medications.includes('metformin') && (
+                    <div className="p-3 bg-white rounded border border-orange-200">
+                      <div className="font-medium text-orange-800 mb-1">Metformin (ยาเบาหวาน)</div>
+                      <div className="text-orange-700 text-sm">
+                        <div className="mb-1">🔍 ติดตามอาการ: ท้องเสีย, คลื่นไส้, ปวดท้อง</div>
+                        <div>💡 คำแนะนำ: ทานหลังอาหาร ดื่มน้ำมาก หากอาการรุนแรงแจ้งแพทย์</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-12 bg-white/90 rounded-lg border-2 border-blue-200 shadow-lg">
@@ -521,6 +1309,14 @@ const HealthAnalytics = ({
             <h3 className="text-xl font-bold text-blue-800 mb-2">ไม่มีข้อมูลเชิงลึก</h3>
             <p className="text-blue-600 font-medium">กรุณาบันทึกข้อมูลสุขภาพเพิ่มเติมเพื่อรับข้อมูลเชิงลึก</p>
             <p className="text-blue-500 text-sm mt-2">ต้องมีข้อมูลอย่างน้อย BMI, ความดันโลหิต, น้ำตาลในเลือด หรืออัตราการเต้นหัวใจ</p>
+            {(userProfile?.medical_conditions || userProfile?.medications) && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-blue-700 text-sm font-medium">
+                  💡 ข้อมูลโรคประจำตัวและยาของคุณพร้อมแล้ว<br/>
+                  เมื่อเพิ่มข้อมูลสุขภาพ จะได้รับคำแนะนำเฉพาะโรคที่แม่นยำยิ่งขึ้น
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -545,7 +1341,16 @@ const HealthAnalytics = ({
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
             <div>
               <h1 className="text-4xl font-bold text-blue-800 mb-2">การวิเคราะห์สุขภาพด้วย AI</h1>
-              <p className="text-blue-600">วิเคราะห์แนวโน้มสุขภาพและรับคำแนะนำเฉพาะบุคคล</p>
+              <p className="text-blue-600 mb-2">วิเคราะห์แนวโน้มสุขภาพและรับคำแนะนำเฉพาะบุคคล</p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                <div className="text-blue-800 font-medium mb-1">💡 คำอธิบาย:</div>
+                <ul className="text-blue-700 text-xs space-y-1">
+                  <li>• <strong>ความเสี่ยงต่ำ</strong> = ค่าอยู่ในเกณฑ์ปกติ ไม่มีอันตราย</li>
+                  <li>• <strong>แนวโน้มคงที่</strong> = ค่าไม่เปลี่ยนแปลงมาก เสถียร</li>
+                  <li>• <strong>แนวโน้มเพิ่มขึ้น</strong> = ค่าสูงขึ้นกว่าเดิม ควรระวัง</li>
+                  <li>• <strong>แนวโน้มลดลง</strong> = ค่าลดลงจากเดิม (อาจดีหรือไม่ดีขึ้นอยู่กับค่า)</li>
+                </ul>
+              </div>
             </div>
             
             {/* Status Tags */}
@@ -553,10 +1358,10 @@ const HealthAnalytics = ({
               <div className={`px-3 py-1 rounded-full text-sm font-semibold border-2 flex items-center ${
                 apiStatus.connected ? 
                 'bg-green-50 text-green-800 border-green-300' : 
-                'bg-red-50 text-red-800 border-red-300'
+                'bg-yellow-50 text-yellow-800 border-yellow-300'
               }`}>
-                <span className="mr-1">{apiStatus.connected ? '🟢' : '🔴'}</span>
-                API {apiStatus.connected ? 'เชื่อมต่อแล้ว' : 'ไม่เชื่อมต่อ'}
+                <span className="mr-1">{apiStatus.connected ? '🟢' : '�'}</span>
+                {apiStatus.connected ? 'API เชื่อมต่อแล้ว' : 'โหมด Demo'}
               </div>
               
               <div className={`px-3 py-1 rounded-full text-sm font-semibold border-2 flex items-center ${
@@ -565,7 +1370,7 @@ const HealthAnalytics = ({
                 'bg-gray-50 text-gray-800 border-gray-300'
               }`}>
                 <span className="mr-1">{apiStatus.aiActive ? '🤖' : '🔇'}</span>
-                AI {apiStatus.aiActive ? 'ใช้งานได้' : 'ไม่พร้อมใช้'}
+                AI {apiStatus.aiActive ? 'พร้อมใช้งาน' : 'ไม่พร้อมใช้'}
               </div>
               
               {getCurrentBMI && getCurrentBMI() && (
@@ -689,6 +1494,67 @@ const HealthAnalytics = ({
           {activeTab === 'trends' && renderTrendsTab()}
           {activeTab === 'predictions' && renderPredictionsTab()}
           {activeTab === 'insights' && renderInsightsTab()}
+        </div>
+
+        {/* Health Education Section */}
+        <div className="mt-8 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-purple-800 mb-4 flex items-center">
+            <span className="mr-2">📚</span>
+            รู้จักตัวเลขสุขภาพ (สำหรับมือใหม่)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+            <div className="bg-white p-4 rounded-lg border border-purple-200">
+              <h4 className="font-bold text-purple-700 mb-2 flex items-center">
+                <span className="mr-1">💓</span>
+                ความดันโลหิต
+              </h4>
+              <ul className="text-purple-600 space-y-1">
+                <li>• <strong>ปกติ:</strong> น้อยกว่า 120/80</li>
+                <li>• <strong>เสี่ยง:</strong> 120-139/80-89</li>
+                <li>• <strong>สูง:</strong> 140/90 ขึ้นไป</li>
+                <li className="text-xs text-gray-600 mt-2">💡 ตัวเลขแรก = ขณะหัวใจบีบ, ตัวเลขหลัง = ขณะหัวใจคลาย</li>
+              </ul>
+            </div>
+            
+            <div className="bg-white p-4 rounded-lg border border-purple-200">
+              <h4 className="font-bold text-purple-700 mb-2 flex items-center">
+                <span className="mr-1">⚖️</span>
+                BMI (ดัชนีมวลกาย)
+              </h4>
+              <ul className="text-purple-600 space-y-1">
+                <li>• <strong>ผอม:</strong> น้อยกว่า 18.5</li>
+                <li>• <strong>ปกติ:</strong> 18.5-24.9</li>
+                <li>• <strong>เกิน:</strong> 25-29.9</li>
+                <li>• <strong>อ้วน:</strong> 30 ขึ้นไป</li>
+                <li className="text-xs text-gray-600 mt-2">💡 คำนวณจาก น้ำหนัก(กก.) ÷ ส่วนสูง(ม.)²</li>
+              </ul>
+            </div>
+            
+            <div className="bg-white p-4 rounded-lg border border-purple-200">
+              <h4 className="font-bold text-purple-700 mb-2 flex items-center">
+                <span className="mr-1">🍯</span>
+                น้ำตาลในเลือด
+              </h4>
+              <ul className="text-purple-600 space-y-1">
+                <li>• <strong>ปกติ:</strong> 70-100 mg/dL</li>
+                <li>• <strong>เสี่ยง:</strong> 100-125 mg/dL</li>
+                <li>• <strong>เบาหวาน:</strong> 126 ขึ้นไป</li>
+                <li className="text-xs text-gray-600 mt-2">💡 วัดตอนท้องว่าง 8-12 ชั่วโมง</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="mt-4 bg-purple-100 border border-purple-200 rounded-lg p-3">
+            <h5 className="font-bold text-purple-800 mb-2">🎯 เป้าหมายสำหรับคนหนุ่มสาว (18-25 ปี):</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-purple-700">
+              <div>
+                <strong>พฤติกรรมดี:</strong> ออกกำลังกาย 150 นาที/สัปดาห์, นอน 7-9 ชั่วโมง/คืน, ดื่มน้ำ 8-10 แก้ว/วัน
+              </div>
+              <div>
+                <strong>หลีกเลี่ยง:</strong> อาหารหวาน มัน เค็ม, ดื่มแอลกอฮอล์, สูบบุหรี่, นั่งนานเกิน 2 ชั่วโมง
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Disclaimer */}

@@ -47,7 +47,20 @@ module.exports = {
     },
     port: 3000,
     open: true,
-    hot: true
+    hot: true,
+    allowedHosts: 'all',
+    host: '0.0.0.0',
+    client: {
+      webSocketURL: 'auto://0.0.0.0:0/ws'
+    },
+    proxy: [
+      {
+        context: ['/api'],
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false
+      }
+    ]
   },
   resolve: {
     extensions: ['.js', '.jsx']

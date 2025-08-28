@@ -25,12 +25,33 @@ const HealthAssessmentForm = ({ onBack, onComplete }) => {
     uric_acid: '',
     creatinine: '',
     
-    // Lifestyle
+    // Lifestyle - Enhanced
     smoking_status: 'never',
+    smoking_years: '',
+    smoking_pack_per_day: '',
     alcohol_frequency: 'never',
+    alcohol_type: '',
+    alcohol_amount: '',
     exercise_frequency: 'never',
+    exercise_type: '',
+    exercise_duration: '',
     sleep_hours: '',
+    sleep_quality: 'good',
     stress_level: 'low',
+    work_environment: 'office',
+    
+    // Diet & Nutrition
+    diet_type: 'mixed',
+    vegetable_servings: '',
+    fruit_servings: '',
+    water_intake: '',
+    fast_food_frequency: 'rarely',
+    
+    // Allergies & Medical History
+    allergies: '',
+    current_medications: '',
+    medical_conditions: '',
+    family_history: '',
     
     // Symptoms
     symptoms: []

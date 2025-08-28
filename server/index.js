@@ -73,7 +73,10 @@ const authenticateToken = (req, res, next) => {
 // Register
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, profile } = req.body;
+    
+    console.log('🔍 Registration Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('📝 Profile data received:', profile);
     
     // Validate input
     if (!username || !email || !password) {
@@ -102,6 +105,37 @@ app.post('/api/auth/register', async (req, res) => {
 
     const userId = result.insertId;
 
+    // Insert profile data if provided
+    if (profile) {
+      try {
+        await db.execute(
+          `INSERT INTO user_profiles (
+            user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+            phone, emergency_contact, medical_conditions, medications, allergies, 
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            userId,
+            profile.full_name || null,
+            profile.date_of_birth || null,
+            profile.gender || null,
+            profile.blood_group || null,
+            profile.height_cm || null,
+            profile.weight_kg || null,
+            profile.phone || null,
+            profile.emergency_contact || null,
+            profile.medical_conditions || null,
+            profile.medications || null,
+            profile.allergies || null
+          ]
+        );
+        console.log('✅ Profile data saved for user:', userId);
+      } catch (profileError) {
+        console.error('⚠️ Profile save error:', profileError);
+        // Don't fail registration if profile save fails
+      }
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       { userId, username, email },
@@ -113,7 +147,7 @@ app.post('/api/auth/register', async (req, res) => {
       success: true,
       message: 'User registered successfully',
       token,
-      user: { userId, username, email }
+      user: { userId, username, email, name: profile?.full_name || username }
     });
 
   } catch (error) {
@@ -238,9 +272,9 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
 app.put('/api/profile', authenticateToken, async (req, res) => {
   try {
     const {
-      first_name, last_name, date_of_birth, gender,
-      height_cm, weight_kg, blood_group, phone,
-      emergency_contact, emergency_phone
+      full_name, date_of_birth, gender, blood_group,
+      height_cm, weight_kg, phone, emergency_contact, emergency_phone,
+      medical_conditions, medications
     } = req.body;
 
     // Data sanitization to prevent undefined values in MySQL
@@ -253,16 +287,17 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
 
     // Sanitize all profile data
     const sanitizedData = {
-      first_name: sanitizeValue(first_name),
-      last_name: sanitizeValue(last_name),
+      full_name: sanitizeValue(full_name),
       date_of_birth: sanitizeValue(date_of_birth),
       gender: sanitizeValue(gender),
+      blood_group: sanitizeValue(blood_group),
       height_cm: sanitizeValue(height_cm),
       weight_kg: sanitizeValue(weight_kg),
-      blood_group: sanitizeValue(blood_group),
       phone: sanitizeValue(phone),
       emergency_contact: sanitizeValue(emergency_contact),
-      emergency_phone: sanitizeValue(emergency_phone)
+      emergency_phone: sanitizeValue(emergency_phone),
+      medical_conditions: sanitizeValue(medical_conditions),
+      medications: sanitizeValue(medications)
     };
 
     console.log('📊 Original profile data:', req.body);
@@ -278,27 +313,27 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
       // Create new profile
       await db.execute(
         `INSERT INTO user_profiles 
-         (user_id, first_name, last_name, date_of_birth, gender, height_cm, weight_kg, 
-          blood_group, phone, emergency_contact, emergency_phone) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.userId, sanitizedData.first_name, sanitizedData.last_name, 
-         sanitizedData.date_of_birth, sanitizedData.gender, sanitizedData.height_cm, 
-         sanitizedData.weight_kg, sanitizedData.blood_group, sanitizedData.phone, 
-         sanitizedData.emergency_contact, sanitizedData.emergency_phone]
+         (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+          phone, emergency_contact, emergency_phone, medical_conditions, medications) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
+         sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
+         sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
+         sanitizedData.emergency_phone, sanitizedData.medical_conditions, sanitizedData.medications]
       );
       console.log('✅ New profile created for user:', req.user.userId);
     } else {
       // Update existing profile
       await db.execute(
         `UPDATE user_profiles SET 
-         first_name = ?, last_name = ?, date_of_birth = ?, gender = ?,
-         height_cm = ?, weight_kg = ?, blood_group = ?, phone = ?,
-         emergency_contact = ?, emergency_phone = ?, updated_at = CURRENT_TIMESTAMP
+         full_name = ?, date_of_birth = ?, gender = ?, blood_group = ?,
+         height_cm = ?, weight_kg = ?, phone = ?, emergency_contact = ?, emergency_phone = ?,
+         medical_conditions = ?, medications = ?, updated_at = CURRENT_TIMESTAMP
          WHERE user_id = ?`,
-        [sanitizedData.first_name, sanitizedData.last_name, sanitizedData.date_of_birth, 
-         sanitizedData.gender, sanitizedData.height_cm, sanitizedData.weight_kg,
-         sanitizedData.blood_group, sanitizedData.phone, sanitizedData.emergency_contact, 
-         sanitizedData.emergency_phone, req.user.userId]
+        [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
+         sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
+         sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
+         sanitizedData.medical_conditions, sanitizedData.medications, req.user.userId]
       );
       console.log('✅ Profile updated for user:', req.user.userId);
     }
@@ -443,29 +478,80 @@ app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
 app.post('/api/health-behaviors', authenticateToken, async (req, res) => {
   try {
     const {
-      record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
-      alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
-      sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes
+      date, exercise_type, exercise_duration, exercise_intensity,
+      sleep_bedtime, sleep_wakeup, sleep_quality, water_glasses,
+      fruits_vegetables, supplements, stress_level, relaxation_minutes, notes,
+      smoking_status, cigarettes_per_day,
+      alcohol_frequency, alcohol_units_per_week,
+      exercise_frequency, sleep_hours_per_night,
+      diet_quality, water_intake_liters
     } = req.body;
+
+    console.log('📝 Received health behavior data:', req.body);
+
+    // Convert values for health_behaviors table
+    const sanitizeValue = (value, allowZero = false) => {
+      if (value === undefined || value === '' || value === null) return null;
+      if (!allowZero && value === 0) return null;
+      return value;
+    };
+
+    // Calculate sleep hours from bedtime and wakeup
+    let calculatedSleepHours = sleep_hours_per_night;
+    if (sleep_bedtime && sleep_wakeup && !sleep_hours_per_night) {
+      const bedtime = new Date(`2000-01-01T${sleep_bedtime}`);
+      const wakeup = new Date(`2000-01-01T${sleep_wakeup}`);
+      if (wakeup < bedtime) wakeup.setDate(wakeup.getDate() + 1);
+      calculatedSleepHours = (wakeup - bedtime) / (1000 * 60 * 60);
+    }
+
+    // Convert water glasses to liters (assume 1 glass = 0.25L)
+    let waterLiters = water_intake_liters;
+    if (water_glasses && water_glasses > 0 && !water_intake_liters) {
+      waterLiters = parseFloat(water_glasses) * 0.25;
+    }
+
+    const behaviorData = [
+      req.user.userId,
+      sanitizeValue(date) || new Date().toISOString().split('T')[0],
+      sanitizeValue(smoking_status),
+      sanitizeValue(cigarettes_per_day, true), // allow 0 for cigarettes
+      sanitizeValue(alcohol_frequency),
+      sanitizeValue(alcohol_units_per_week, true), // allow 0 for alcohol units
+      sanitizeValue(exercise_frequency),
+      sanitizeValue(exercise_duration, true) || null, // allow 0 but default to null
+      sanitizeValue(calculatedSleepHours),
+      sanitizeValue(stress_level),
+      sanitizeValue(diet_quality),
+      sanitizeValue(waterLiters),
+      sanitizeValue(notes)
+    ];
+
+    console.log('🏃 Sanitized health behavior data:', behaviorData);
 
     const [result] = await db.execute(
       `INSERT INTO health_behaviors 
-       (user_id, record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
-        alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
+       (user_id, record_date, smoking_status, cigarettes_per_day, alcohol_frequency, 
+        alcohol_units_per_week, exercise_frequency, exercise_duration_minutes, 
         sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.userId, record_date, smoking_status, cigarettes_per_day, alcohol_frequency,
-       alcohol_units_per_week, exercise_frequency, exercise_duration_minutes,
-       sleep_hours_per_night, stress_level, diet_quality, water_intake_liters, notes]
+      behaviorData
     );
 
+    console.log('✅ Health behavior inserted with ID:', result.insertId);
+
     res.status(201).json({ 
-      message: 'Health behavior recorded successfully',
+      success: true,
+      message: 'พฤติกรรมสุขภาพบันทึกเรียบร้อยแล้ว',
       behaviorId: result.insertId 
     });
   } catch (error) {
-    console.error('Add health behavior error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Add health behavior error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+      details: error.message 
+    });
   }
 });
 
@@ -593,6 +679,155 @@ app.post('/api/calculate-bmi', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Calculate BMI error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Post-Registration Health Assessment
+app.post('/api/health-assessment', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const assessmentData = req.body;
+
+    console.log('📋 Health Assessment Data received for user:', userId);
+
+    // Create health assessment record
+    const [result] = await db.execute(`
+      INSERT INTO health_assessments (
+        user_id,
+        smoking_status, smoking_years, smoking_pack_per_day, smoking_quit_attempts,
+        alcohol_frequency, alcohol_type, alcohol_amount, alcohol_binge_frequency,
+        exercise_frequency, exercise_type, exercise_duration, exercise_intensity,
+        sleep_hours, sleep_quality, sleep_problems,
+        stress_level, stress_sources, coping_mechanisms,
+        diet_type, vegetable_servings, fruit_servings, water_intake, 
+        fast_food_frequency, snack_frequency, caffeine_intake,
+        food_allergies, drug_allergies, environmental_allergies,
+        current_medications, supplement_usage, medical_conditions, family_history,
+        work_environment, work_stress_level, screen_time_hours,
+        mood_changes, anxiety_frequency, social_activities,
+        health_goals, recent_health_changes, vaccination_status,
+        current_symptoms, chronic_symptoms,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `, [
+      userId,
+      assessmentData.smoking_status || 'never',
+      assessmentData.smoking_years || null,
+      assessmentData.smoking_pack_per_day || null,
+      assessmentData.smoking_quit_attempts || null,
+      assessmentData.alcohol_frequency || 'never',
+      assessmentData.alcohol_type || null,
+      assessmentData.alcohol_amount || null,
+      assessmentData.alcohol_binge_frequency || 'never',
+      assessmentData.exercise_frequency || 'never',
+      assessmentData.exercise_type || null,
+      assessmentData.exercise_duration || null,
+      assessmentData.exercise_intensity || 'light',
+      assessmentData.sleep_hours || null,
+      assessmentData.sleep_quality || 'good',
+      JSON.stringify(assessmentData.sleep_problems || []),
+      assessmentData.stress_level || 'low',
+      JSON.stringify(assessmentData.stress_sources || []),
+      JSON.stringify(assessmentData.coping_mechanisms || []),
+      assessmentData.diet_type || 'mixed',
+      assessmentData.vegetable_servings || null,
+      assessmentData.fruit_servings || null,
+      assessmentData.water_intake || null,
+      assessmentData.fast_food_frequency || 'rarely',
+      assessmentData.snack_frequency || 'sometimes',
+      assessmentData.caffeine_intake || 'moderate',
+      assessmentData.food_allergies || null,
+      assessmentData.drug_allergies || null,
+      assessmentData.environmental_allergies || null,
+      assessmentData.current_medications || null,
+      assessmentData.supplement_usage || null,
+      assessmentData.medical_conditions || null,
+      assessmentData.family_history || null,
+      assessmentData.work_environment || 'office',
+      assessmentData.work_stress_level || 'moderate',
+      assessmentData.screen_time_hours || null,
+      assessmentData.mood_changes || 'no',
+      assessmentData.anxiety_frequency || 'rarely',
+      assessmentData.social_activities || 'sometimes',
+      JSON.stringify(assessmentData.health_goals || []),
+      assessmentData.recent_health_changes || null,
+      assessmentData.vaccination_status || 'up_to_date',
+      JSON.stringify(assessmentData.current_symptoms || []),
+      JSON.stringify(assessmentData.chronic_symptoms || [])
+    ]);
+
+    console.log('✅ Health assessment saved with ID:', result.insertId);
+
+    res.json({ 
+      success: true, 
+      message: 'Health assessment saved successfully',
+      assessment_id: result.insertId,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Health assessment error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to save health assessment',
+      details: error.message 
+    });
+  }
+});
+
+// Get Health Assessment
+app.get('/api/health-assessment', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const [assessments] = await db.execute(`
+      SELECT * FROM health_assessments 
+      WHERE user_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `, [userId]);
+
+    if (assessments.length === 0) {
+      return res.json({ 
+        success: true, 
+        assessment: null,
+        message: 'No health assessment found'
+      });
+    }
+
+    const assessment = assessments[0];
+    
+    // Parse JSON fields
+    if (assessment.sleep_problems) {
+      assessment.sleep_problems = JSON.parse(assessment.sleep_problems);
+    }
+    if (assessment.stress_sources) {
+      assessment.stress_sources = JSON.parse(assessment.stress_sources);
+    }
+    if (assessment.coping_mechanisms) {
+      assessment.coping_mechanisms = JSON.parse(assessment.coping_mechanisms);
+    }
+    if (assessment.health_goals) {
+      assessment.health_goals = JSON.parse(assessment.health_goals);
+    }
+    if (assessment.current_symptoms) {
+      assessment.current_symptoms = JSON.parse(assessment.current_symptoms);
+    }
+    if (assessment.chronic_symptoms) {
+      assessment.chronic_symptoms = JSON.parse(assessment.chronic_symptoms);
+    }
+
+    res.json({ 
+      success: true, 
+      assessment: assessment
+    });
+
+  } catch (error) {
+    console.error('❌ Get health assessment error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to retrieve health assessment' 
+    });
   }
 });
 

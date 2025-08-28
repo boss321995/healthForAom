@@ -1,0 +1,18 @@
+{
+  "username": "testuser",
+  "email": "test@example.com", 
+  "password": "password123",
+  "profile": {
+    "full_name": "Test User",
+    "date_of_birth": "1990-01-01",
+    "gender": "male",
+    "blood_group": "O+",
+    "height_cm": 175,
+    "weight_kg": 70,
+    "phone": "0812345678",
+    "emergency_contact": "Emergency Contact",
+    "medical_conditions": "None",
+    "medications": "None",
+    "allergies": "None"
+  }
+}
