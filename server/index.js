@@ -1820,6 +1820,89 @@ app.post('/api/setup/migrate', async (req, res) => {
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, measurement_date DESC);
       CREATE INDEX IF NOT EXISTS idx_health_behavior_user_date ON health_behavior(user_id, behavior_date DESC);
+
+    -- Add consent flag if missing
+    ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS allow_research_data BOOLEAN DEFAULT FALSE;
+
+    -- Health summary table used by /api/health-summary
+    CREATE TABLE IF NOT EXISTS health_summary (
+      user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+      overall_health_score INTEGER DEFAULT 0,
+      bmi DECIMAL(4,2),
+      bmi_category VARCHAR(50),
+      blood_pressure_status VARCHAR(50),
+      diabetes_risk VARCHAR(50),
+      cardiovascular_risk VARCHAR(50),
+      last_checkup DATE,
+      next_recommended_checkup DATE,
+      health_goals TEXT,
+      medications TEXT,
+      allergies TEXT,
+      medical_conditions TEXT,
+      lifestyle_recommendations TEXT,
+      emergency_notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Health assessments table used by assessment endpoints
+    CREATE TABLE IF NOT EXISTS health_assessments (
+      assessment_id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      smoking_status VARCHAR(20),
+      smoking_years INTEGER,
+      smoking_pack_per_day DECIMAL(4,2),
+      smoking_quit_attempts INTEGER,
+      alcohol_frequency VARCHAR(20),
+      alcohol_type VARCHAR(50),
+      alcohol_amount VARCHAR(50),
+      alcohol_binge_frequency VARCHAR(20),
+      exercise_frequency VARCHAR(20),
+      exercise_type VARCHAR(50),
+      exercise_duration INTEGER,
+      exercise_intensity VARCHAR(20),
+      sleep_hours DECIMAL(4,2),
+      sleep_quality VARCHAR(20),
+      sleep_problems JSONB,
+      stress_level VARCHAR(20),
+      stress_sources JSONB,
+      coping_mechanisms JSONB,
+      diet_type VARCHAR(20),
+      vegetable_servings INTEGER,
+      fruit_servings INTEGER,
+      water_intake DECIMAL(5,2),
+      fast_food_frequency VARCHAR(20),
+      snack_frequency VARCHAR(20),
+      caffeine_intake VARCHAR(20),
+      food_allergies TEXT,
+      drug_allergies TEXT,
+      environmental_allergies TEXT,
+      current_medications TEXT,
+      supplement_usage TEXT,
+      medical_conditions TEXT,
+      family_history TEXT,
+      work_environment VARCHAR(50),
+      work_stress_level VARCHAR(20),
+      screen_time_hours DECIMAL(4,2),
+      mood_changes VARCHAR(10),
+      anxiety_frequency VARCHAR(20),
+      social_activities VARCHAR(20),
+      health_goals JSONB,
+      recent_health_changes TEXT,
+      vaccination_status VARCHAR(30),
+      current_symptoms JSONB,
+      chronic_symptoms JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Activity logs used by export endpoint
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+      action VARCHAR(100) NOT NULL,
+      details JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
     `;
 
     // Execute migration
