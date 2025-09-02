@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: health-management-api
+    env: node
+    plan: free
+    buildCommand: npm run build:server
+    startCommand: npm run server
+    envVars:
+      - key: NODE_ENV
+        value: production
