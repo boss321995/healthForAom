@@ -1918,32 +1918,7 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Catch-all route for React SPA - must be LAST
-app.get('*', (req, res) => {
-  const indexPath = globalDistPath ? 
-    path.join(globalDistPath, 'index.html') :
-    path.join(process.cwd(), '..', 'dist', 'index.html');
-  
-  // Check if request is for API
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  
-  console.log('🔄 Serving React app for:', req.path);
-  console.log('📁 Using index path:', indexPath);
-  
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('❌ Error serving React app:', err);
-      res.status(500).send(`
-        <h1>Frontend Not Available</h1>
-        <p>Could not load React app from: ${indexPath}</p>
-        <p>Error: ${err.message}</p>
-        <p>Global dist path: ${globalDistPath || 'not set'}</p>
-      `);
-    }
-  });
-});
+// (moved) SPA catch-all will be registered after static middleware
 
 // Start server with enhanced error handling
 async function startServer() {
@@ -2084,6 +2059,30 @@ if (foundDistPath) {
 startServer().catch((error) => {
   console.error('💀 Critical startup error:', error);
   process.exit(1);
+});
+
+// SPA catch-all AFTER static middleware (skip asset-like paths)
+app.get(/^(?!\/api\/).*/, (req, res, next) => {
+  // If request looks like a static asset (has an extension), let 404/static handle it
+  if (/\.[a-zA-Z0-9]{2,5}$/.test(req.path)) {
+    return next();
+  }
+  const indexPath = (globalDistPath
+    ? path.join(globalDistPath, 'index.html')
+    : path.join(process.cwd(), '..', 'dist', 'index.html'));
+
+  console.log('🔄 SPA fallback for:', req.path);
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('❌ Error serving SPA index:', err);
+      res.status(500).send(`
+        <h1>Frontend Not Available</h1>
+        <p>Could not load React app from: ${indexPath}</p>
+        <p>Error: ${err.message}</p>
+        <p>Global dist path: ${globalDistPath || 'not set'}</p>
+      `);
+    }
+  });
 });
 
 // Final 404 handler - after all routes and static middleware
