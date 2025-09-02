@@ -703,7 +703,38 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, limit = 10 } = req.query;
     
-    let query = 'SELECT * FROM health_metrics WHERE user_id = $1';
+    let query = `
+      SELECT 
+        hm.metric_id,
+        hm.user_id,
+        COALESCE(hm.weight_kg, up.weight_kg) AS weight_kg,
+        hm.height_cm,
+        hm.bmi,
+        hm.body_fat_percentage,
+        hm.blood_pressure_systolic AS systolic_bp,
+        hm.blood_pressure_diastolic AS diastolic_bp,
+        hm.heart_rate_bpm AS heart_rate,
+        hm.body_temperature_celsius,
+        hm.blood_sugar_mg,
+        hm.uric_acid,
+        hm.alt,
+        hm.ast,
+        hm.hemoglobin,
+        hm.hematocrit,
+        hm.iron,
+        hm.tibc,
+        hm.oxygen_saturation,
+        hm.steps_count,
+        hm.sleep_hours,
+        hm.stress_level,
+        hm.energy_level,
+        hm.mood_score,
+        hm.measurement_date,
+        hm.notes,
+        hm.recorded_at
+      FROM health_metrics hm
+      LEFT JOIN user_profiles up ON up.user_id = hm.user_id
+      WHERE hm.user_id = $1`;
     const params = [req.user.userId];
     let idx = 2;
 
