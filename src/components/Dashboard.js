@@ -28,6 +28,36 @@ const Dashboard = () => {
     lastUpdate: null
   });
 
+  // Normalizer: map various API field names to the ones the UI expects
+  const normalizeMetrics = (items) => {
+    return (items || []).map((m) => {
+      const normalized = { ...m };
+      // Date field fallback
+      normalized.measurement_date = m.measurement_date || m.date || m.record_date || m.created_at || null;
+      // BP & heart rate fallbacks
+      if (normalized.systolic_bp == null) {
+        normalized.systolic_bp = m.blood_pressure_systolic ?? m.systolic ?? null;
+      }
+      if (normalized.diastolic_bp == null) {
+        normalized.diastolic_bp = m.blood_pressure_diastolic ?? m.diastolic ?? null;
+      }
+      if (normalized.heart_rate == null) {
+        normalized.heart_rate = m.heart_rate_bpm ?? m.pulse ?? null;
+      }
+      // Cast to numbers when present
+      normalized.systolic_bp = normalized.systolic_bp !== null && normalized.systolic_bp !== undefined
+        ? Number(normalized.systolic_bp)
+        : null;
+      normalized.diastolic_bp = normalized.diastolic_bp !== null && normalized.diastolic_bp !== undefined
+        ? Number(normalized.diastolic_bp)
+        : null;
+      normalized.heart_rate = normalized.heart_rate !== null && normalized.heart_rate !== undefined
+        ? Number(normalized.heart_rate)
+        : null;
+      return normalized;
+    });
+  };
+
   // Form state for health metrics
   const [metricsForm, setMetricsForm] = useState({
     measurement_date: new Date().toISOString().split('T')[0],
@@ -93,9 +123,9 @@ const Dashboard = () => {
 
       const headers = { Authorization: `Bearer ${token}` };
       
-      // ดึงข้อมูล health metrics ล่าสุด
+    // ดึงข้อมูล health metrics ล่าสุด
   const metricsResponse = await axios.get('/api/health-metrics?limit=50', { headers });
-      const metrics = metricsResponse.data || [];
+    const metrics = normalizeMetrics(metricsResponse.data || []);
       
       // ดึงข้อมูล health behaviors ล่าสุด
   const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
@@ -144,7 +174,7 @@ const Dashboard = () => {
       setDataHistory(combinedHistory);
       
       // อัปเดต recentMetrics ให้รวมข้อมูลจาก behaviors ด้วย แต่แยกประเภทชัดเจน
-      const combinedMetrics = [...metrics, ...behaviors]
+  const combinedMetrics = [...metrics, ...behaviors]
         .sort((a, b) => new Date(b.created_at || b.record_date || b.measurement_date) - new Date(a.created_at || a.record_date || a.measurement_date))
         .slice(0, 10);
       setRecentMetrics(combinedMetrics);
@@ -198,10 +228,11 @@ const Dashboard = () => {
       }
 
       // Fetch recent metrics
-      try {
+  try {
   const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
-        setRecentMetrics(metricsResponse.data);
-      } catch (error) {
+    const normalized = normalizeMetrics(metricsResponse.data || []);
+    setRecentMetrics(normalized);
+  } catch (error) {
         console.error('Error fetching health metrics:', error);
       }
 

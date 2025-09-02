@@ -237,11 +237,12 @@ app.get('/api', (req, res) => {
       'POST /api/auth/login - User login',
       'GET /api/users/profile - Get user profile',
       'PUT /api/users/profile - Update user profile',
-      'GET /api/health/metrics - Get health metrics',
-      'POST /api/health/metrics - Add health metrics',
-      'GET /api/health/behavior - Get health behavior',
-      'POST /api/health/behavior - Add health behavior',
-      'POST /api/health/analysis - AI health analysis',
+      'GET /api/health-metrics - Get health metrics',
+      'POST /api/health-metrics - Add health metrics',
+      'GET /api/health-behaviors - Get health behaviors',
+      'POST /api/health-behaviors - Add health behaviors',
+      'GET /api/health-summary - Get health summary',
+      'GET /api/current-bmi - Get current BMI',
       'POST /api/setup/migrate - Database migration',
       'GET /api/setup/tables - List database tables'
     ]
@@ -690,7 +691,16 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
     res.json({ message: 'Profile updated successfully' });
   } catch (error) {
     console.error('❌ Update profile error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack?.split('\n')[0]
+    });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -708,8 +718,17 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
         hm.metric_id,
         hm.user_id,
         COALESCE(hm.weight_kg, up.weight_kg) AS weight_kg,
-        hm.height_cm,
-        hm.bmi,
+        COALESCE(hm.height_cm, up.height_cm) AS height_cm,
+        COALESCE(
+          hm.bmi,
+          CASE 
+            WHEN COALESCE(hm.height_cm, up.height_cm) IS NOT NULL 
+             AND COALESCE(hm.height_cm, up.height_cm) > 0 
+             AND COALESCE(hm.weight_kg, up.weight_kg) IS NOT NULL
+            THEN ROUND(COALESCE(hm.weight_kg, up.weight_kg) / POWER(COALESCE(hm.height_cm, up.height_cm) / 100.0, 2), 2)
+            ELSE NULL
+          END
+        ) AS bmi,
         hm.body_fat_percentage,
         hm.blood_pressure_systolic AS systolic_bp,
         hm.blood_pressure_diastolic AS diastolic_bp,
@@ -1297,7 +1316,7 @@ app.get('/api/current-bmi', authenticateToken, async (req, res) => {
         [req.user.userId]
       );
 
-    if (profile.length === 0) {
+  if (profile.rows.length === 0) {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
@@ -1854,6 +1873,17 @@ app.post('/api/setup/migrate', async (req, res) => {
 
     -- Add consent flag if missing
     ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS allow_research_data BOOLEAN DEFAULT FALSE;
+    ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS emergency_phone VARCHAR(20);
+
+    -- Ensure newly added lab fields exist on existing databases
+    ALTER TABLE health_metrics 
+      ADD COLUMN IF NOT EXISTS uric_acid DECIMAL(4,2),
+      ADD COLUMN IF NOT EXISTS alt DECIMAL(6,2),
+      ADD COLUMN IF NOT EXISTS ast DECIMAL(6,2),
+      ADD COLUMN IF NOT EXISTS hemoglobin DECIMAL(4,2),
+      ADD COLUMN IF NOT EXISTS hematocrit DECIMAL(4,2),
+      ADD COLUMN IF NOT EXISTS iron DECIMAL(6,2),
+      ADD COLUMN IF NOT EXISTS tibc DECIMAL(6,2);
 
     -- Health summary table used by /api/health-summary
     CREATE TABLE IF NOT EXISTS health_summary (
@@ -1966,6 +1996,215 @@ app.post('/api/setup/migrate', async (req, res) => {
   }
 });
 
+// Convenience: allow GET to trigger the same migration (idempotent)
+app.get('/api/setup/migrate', async (req, res) => {
+  try {
+    console.log('🗄️ Starting database migration (GET)...');
+
+    const migrationSQL = `
+      CREATE TABLE IF NOT EXISTS users (
+          user_id SERIAL PRIMARY KEY,
+          username VARCHAR(50) UNIQUE NOT NULL,
+          email VARCHAR(100) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS user_profiles (
+          profile_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          full_name VARCHAR(100),
+          date_of_birth DATE,
+          gender VARCHAR(10),
+          blood_group VARCHAR(5),
+          height_cm DECIMAL(5,2),
+          weight_kg DECIMAL(5,2),
+          phone VARCHAR(20),
+          emergency_contact VARCHAR(100),
+          medical_conditions TEXT,
+          medications TEXT,
+          allergies TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS health_metrics (
+          metric_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          weight_kg DECIMAL(5,2),
+          height_cm DECIMAL(5,2),
+          bmi DECIMAL(4,2),
+          body_fat_percentage DECIMAL(4,2),
+          blood_pressure_systolic INTEGER,
+          blood_pressure_diastolic INTEGER,
+          heart_rate_bpm INTEGER,
+          body_temperature_celsius DECIMAL(4,2),
+          blood_sugar_mg DECIMAL(6,2),
+          uric_acid DECIMAL(4,2),
+          alt DECIMAL(6,2),
+          ast DECIMAL(6,2),
+          hemoglobin DECIMAL(4,2),
+          hematocrit DECIMAL(4,2),
+          iron DECIMAL(6,2),
+          tibc DECIMAL(6,2),
+          oxygen_saturation DECIMAL(4,2),
+          steps_count INTEGER,
+          sleep_hours DECIMAL(4,2),
+          stress_level INTEGER,
+          energy_level INTEGER,
+          mood_score INTEGER,
+          measurement_date DATE NOT NULL,
+          notes TEXT,
+          recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS health_behavior (
+          behavior_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          exercise_minutes INTEGER DEFAULT 0,
+          exercise_type VARCHAR(100),
+          activity_level VARCHAR(20) DEFAULT 'sedentary',
+          calories_consumed INTEGER,
+          water_intake_ml INTEGER DEFAULT 0,
+          alcohol_units DECIMAL(4,2) DEFAULT 0,
+          smoking_cigarettes INTEGER DEFAULT 0,
+          sleep_hours DECIMAL(4,2),
+          sleep_quality VARCHAR(20),
+          stress_level INTEGER,
+          mood VARCHAR(20),
+          screen_time_hours DECIMAL(4,2),
+          meditation_minutes INTEGER DEFAULT 0,
+          social_interaction_hours DECIMAL(4,2),
+          behavior_date DATE NOT NULL,
+          notes TEXT,
+          recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, measurement_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_health_behavior_user_date ON health_behavior(user_id, behavior_date DESC);
+
+      ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS allow_research_data BOOLEAN DEFAULT FALSE;
+      ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS emergency_phone VARCHAR(20);
+
+      ALTER TABLE health_metrics 
+        ADD COLUMN IF NOT EXISTS uric_acid DECIMAL(4,2),
+        ADD COLUMN IF NOT EXISTS alt DECIMAL(6,2),
+        ADD COLUMN IF NOT EXISTS ast DECIMAL(6,2),
+        ADD COLUMN IF NOT EXISTS hemoglobin DECIMAL(4,2),
+        ADD COLUMN IF NOT EXISTS hematocrit DECIMAL(4,2),
+        ADD COLUMN IF NOT EXISTS iron DECIMAL(6,2),
+        ADD COLUMN IF NOT EXISTS tibc DECIMAL(6,2);
+
+      CREATE TABLE IF NOT EXISTS health_summary (
+        user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        overall_health_score INTEGER DEFAULT 0,
+        bmi DECIMAL(4,2),
+        bmi_category VARCHAR(50),
+        blood_pressure_status VARCHAR(50),
+        diabetes_risk VARCHAR(50),
+        cardiovascular_risk VARCHAR(50),
+        last_checkup DATE,
+        next_recommended_checkup DATE,
+        health_goals TEXT,
+        medications TEXT,
+        allergies TEXT,
+        medical_conditions TEXT,
+        lifestyle_recommendations TEXT,
+        emergency_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS health_assessments (
+        assessment_id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        smoking_status VARCHAR(20),
+        smoking_years INTEGER,
+        smoking_pack_per_day DECIMAL(4,2),
+        smoking_quit_attempts INTEGER,
+        alcohol_frequency VARCHAR(20),
+        alcohol_type VARCHAR(50),
+        alcohol_amount VARCHAR(50),
+        alcohol_binge_frequency VARCHAR(20),
+        exercise_frequency VARCHAR(20),
+        exercise_type VARCHAR(50),
+        exercise_duration INTEGER,
+        exercise_intensity VARCHAR(20),
+        sleep_hours DECIMAL(4,2),
+        sleep_quality VARCHAR(20),
+        sleep_problems JSONB,
+        stress_level VARCHAR(20),
+        stress_sources JSONB,
+        coping_mechanisms JSONB,
+        diet_type VARCHAR(20),
+        vegetable_servings INTEGER,
+        fruit_servings INTEGER,
+        water_intake DECIMAL(5,2),
+        fast_food_frequency VARCHAR(20),
+        snack_frequency VARCHAR(20),
+        caffeine_intake VARCHAR(20),
+        food_allergies TEXT,
+        drug_allergies TEXT,
+        environmental_allergies TEXT,
+        current_medications TEXT,
+        supplement_usage TEXT,
+        medical_conditions TEXT,
+        family_history TEXT,
+        work_environment VARCHAR(50),
+        work_stress_level VARCHAR(20),
+        screen_time_hours DECIMAL(4,2),
+        mood_changes VARCHAR(10),
+        anxiety_frequency VARCHAR(20),
+        social_activities VARCHAR(20),
+        health_goals JSONB,
+        recent_health_changes TEXT,
+        vaccination_status VARCHAR(30),
+        current_symptoms JSONB,
+        chronic_symptoms JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+        action VARCHAR(100) NOT NULL,
+        details JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+
+    await db.query(migrationSQL);
+
+    const tablesResult = await db.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `);
+
+    console.log('✅ Database migration (GET) completed successfully');
+    res.status(200).json({
+      success: true,
+      message: 'Database migration (GET) completed successfully',
+      tables_created: tablesResult.rows.map(row => row.table_name),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Migration (GET) failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Check database tables
 app.get('/api/setup/tables', async (req, res) => {
   try {
@@ -1986,6 +2225,108 @@ app.get('/api/setup/tables', async (req, res) => {
       error: error.message,
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// List all registered routes for diagnostics
+app.get('/api/debug/routes', (req, res) => {
+  try {
+    const routes = [];
+    const processStack = (stack, prefix = '') => {
+      stack.forEach((layer) => {
+        if (layer.route && layer.route.path) {
+          const methods = Object.keys(layer.route.methods)
+            .filter((m) => layer.route.methods[m])
+            .map((m) => m.toUpperCase());
+          routes.push({ method: methods.join(','), path: prefix + layer.route.path });
+        } else if (layer.name === 'router' && layer.handle && layer.handle.stack) {
+          const newPrefix = layer.regexp && layer.regexp.source
+            ? prefix
+            : prefix;
+          processStack(layer.handle.stack, newPrefix);
+        }
+      });
+    };
+
+    if (app && app._router && app._router.stack) {
+      processStack(app._router.stack);
+    }
+
+    // Sort for readability
+    routes.sort((a, b) => (a.path + a.method).localeCompare(b.path + b.method));
+
+    res.json({
+      count: routes.length,
+      routes,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Inspect table columns (schema) for quick diagnostics
+app.get('/api/setup/columns/:table', async (req, res) => {
+  try {
+    const table = (req.params.table || '').toLowerCase();
+    if (!table) return res.status(400).json({ error: 'Table name is required' });
+
+    const cols = await db.query(`
+      SELECT 
+        column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+      ORDER BY ordinal_position
+    `, [table]);
+
+    res.status(200).json({
+      table,
+      columns: cols.rows,
+      total_columns: cols.rows.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Auth-required: quick overview of current user's health_metrics completeness
+app.get('/api/debug/health-metrics/overview', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const countResult = await db.query(
+      `SELECT COUNT(*)::int AS total FROM health_metrics WHERE user_id = $1`,
+      [userId]
+    );
+    const latestResult = await db.query(
+      `SELECT 
+        metric_id, measurement_date, 
+        blood_pressure_systolic, blood_pressure_diastolic, heart_rate_bpm,
+        weight_kg, height_cm, bmi,
+        blood_sugar_mg, uric_acid, alt, ast, hemoglobin, hematocrit, iron, tibc,
+        recorded_at
+       FROM health_metrics 
+       WHERE user_id = $1 
+       ORDER BY measurement_date DESC, recorded_at DESC 
+       LIMIT 1`,
+      [userId]
+    );
+
+    const schema = await db.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' AND table_name = 'health_metrics' 
+      ORDER BY ordinal_position`);
+
+    res.json({
+      total_rows: countResult.rows?.[0]?.total ?? 0,
+      latest: latestResult.rows?.[0] || null,
+      schema: schema.rows,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Debug health-metrics overview error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
