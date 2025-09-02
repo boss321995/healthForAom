@@ -8,9 +8,9 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "build": "echo 'No build step required for Node.js server'",
-    "prod": "NODE_ENV=production node index.js",
-    "test": "echo 'Tests not implemented yet'",
-    "postinstall": "echo '🔧 Building frontend...' && cd .. && npm ci && npm run build && echo '✅ Frontend built successfully'"
+  "prod": "NODE_ENV=production node index.js",
+  "test": "echo 'Tests not implemented yet'",
+  "postinstall": "echo '🔧 Building frontend...' && cd .. && npm install --include=dev && npm run build && echo '✅ Frontend built successfully'"
   },
   "dependencies": {
     "@google/generative-ai": "^0.1.3",
