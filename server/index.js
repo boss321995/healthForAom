@@ -139,7 +139,71 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ===============================
-// 🏥 Health Check & Keep-Alive Routes (For Render Deployment)
+// � Root & Welcome Routes
+// ===============================
+
+// Root route - Welcome message
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: '🏥 Health Management API',
+    version: '1.0.0',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/api/health',
+      ping: '/api/ping',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login'
+      },
+      users: {
+        profile: 'GET /api/users/profile',
+        updateProfile: 'PUT /api/users/profile'
+      },
+      health_data: {
+        metrics: 'GET/POST /api/health/metrics',
+        behavior: 'GET/POST /api/health/behavior',
+        analysis: 'POST /api/health/analysis'
+      },
+      setup: {
+        migrate: 'POST /api/setup/migrate',
+        tables: 'GET /api/setup/tables'
+      }
+    },
+    documentation: 'Visit /api/health for system status'
+  });
+});
+
+// API Info route
+app.get('/api', (req, res) => {
+  res.status(200).json({
+    api: '🏥 Health Management API',
+    version: '1.0.0',
+    status: 'operational',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    database: db ? 'connected' : 'not configured',
+    uptime: process.uptime(),
+    endpoints_available: [
+      'GET /api/health - System health check',
+      'GET /api/ping - Keep-alive endpoint',
+      'POST /api/auth/register - User registration',
+      'POST /api/auth/login - User login',
+      'GET /api/users/profile - Get user profile',
+      'PUT /api/users/profile - Update user profile',
+      'GET /api/health/metrics - Get health metrics',
+      'POST /api/health/metrics - Add health metrics',
+      'GET /api/health/behavior - Get health behavior',
+      'POST /api/health/behavior - Add health behavior',
+      'POST /api/health/analysis - AI health analysis',
+      'POST /api/setup/migrate - Database migration',
+      'GET /api/setup/tables - List database tables'
+    ]
+  });
+});
+
+// ===============================
+// �🏥 Health Check & Keep-Alive Routes (For Render Deployment)
 // ===============================
 
 // Health check endpoint to prevent sleep mode
