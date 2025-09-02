@@ -45,7 +45,7 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
                 <span className="sm:hidden">เข้าระบบ</span>
               </button>
               <button
-                onClick={handleStartAssessment}
+                onClick={onRegister}
                 className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white px-3 sm:px-6 py-1 sm:py-2 rounded-lg font-bold border-2 border-green-500 shadow-lg transition-all text-sm sm:text-base"
               >
                 <span className="hidden sm:inline">สมัครสมาชิก</span>
@@ -73,7 +73,7 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
           
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-12 sm:mb-16 px-4">
             <button
-              onClick={handleStartAssessment}
+              onClick={onRegister}
               className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-bold border-2 border-emerald-500 shadow-lg transform hover:scale-105 transition-all"
             >
               👥 สมัครสมาชิกเลย
@@ -273,10 +273,10 @@ const LandingPage = ({ onStartAssessment, onLogin, onRegister }) => {
               ไม่ต้องรอ ไม่ต้องจ่าย เริ่มตรวจสุขภาพออนไลน์ได้เลย
             </p>
             <button
-              onClick={handleStartAssessment}
+              onClick={onRegister}
               className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white px-8 py-4 rounded-lg text-lg font-bold border-2 border-emerald-500 shadow-lg transform hover:scale-105 transition-all"
             >
-              🚀 เริ่มตรวจสุขภาพฟรี
+              🚀 เริ่มสมัครสมาชิกฟรี
             </button>
           </div>
         </div>

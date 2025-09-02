@@ -4,7 +4,8 @@
 import React from 'react';
 
 class ApiManager {
-  constructor(baseURL = '/api') {
+  constructor(baseURL = 'https://health-management-api.onrender.com/api') {
+    // Use production API URL by default
     this.baseURL = process.env.REACT_APP_API_URL || baseURL;
     this.maxRetries = 3;
     this.retryDelay = 1000; // 1 second
@@ -13,6 +14,8 @@ class ApiManager {
     // Keep track of connection status
     this.isConnected = true;
     this.connectionListeners = [];
+    
+    console.log('🚀 ApiManager initialized with:', this.baseURL);
     
     // Wake up server on first load
     this.wakeUpServer();

@@ -2,8 +2,8 @@ import axios from 'axios';
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: 'http://localhost:5000',
-  timeout: 10000,
+  baseURL: process.env.REACT_APP_API_URL || 'https://health-management-api.onrender.com',
+  timeout: 30000, // Increased timeout for Render cold starts
 });
 
 // Request interceptor to add auth token
