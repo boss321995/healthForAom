@@ -5,6 +5,7 @@
 **Render** เป็น Platform-as-a-Service (PaaS) ที่ให้บริการ hosting แอปพลิเคชัน โดยมี Free Tier ที่มีข้อจำกัด:
 
 ### ข้อจำกัดของ Free Tier:
+
 - ⏰ **Sleep Mode**: เซิร์ฟเวอร์จะหลับหลังจากไม่มีการใช้งาน 15 นาที
 - 🔄 **Wake-up Time**: ใช้เวลาปลุกประมาณ 20-60 วินาที
 - 📊 **Resources**: RAM 512MB, CPU shared
@@ -17,6 +18,7 @@
 โค้ดได้รับการปรับปรุงแล้วดังนี้:
 
 #### Database Connection Pool
+
 ```javascript
 // ใช้ Connection Pool แทน single connection
 const dbConfig = {
@@ -24,15 +26,16 @@ const dbConfig = {
   acquireTimeout: 60000,
   timeout: 60000,
   reconnect: true,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 };
 ```
 
 #### Keep-Alive System
+
 ```javascript
 // ระบบป้องกัน Sleep Mode
 function initKeepAlive() {
-  if (process.env.NODE_ENV === 'production' && process.env.RENDER_SERVICE_URL) {
+  if (process.env.NODE_ENV === "production" && process.env.RENDER_SERVICE_URL) {
     setInterval(async () => {
       // Ping ตัวเองทุก 10 นาที
       await fetch(`${process.env.RENDER_SERVICE_URL}/api/ping`);
@@ -42,11 +45,13 @@ function initKeepAlive() {
 ```
 
 #### Health Check Endpoints
+
 - `/api/health` - ตรวจสอบสถานะเซิร์ฟเวอร์และฐานข้อมูล
 - `/api/ping` - Keep-alive endpoint
 - `/api/status` - ข้อมูลเซิร์ฟเวอร์
 
 #### Error Handling และ Retry Logic
+
 - Database reconnection อัตโนมัติ
 - Query retry สำหรับ connection errors
 - Graceful shutdown handling
@@ -54,6 +59,7 @@ function initKeepAlive() {
 ### 2. Frontend API Manager (✅ เสร็จแล้ว)
 
 สร้าง `ApiManager.js` ที่มีฟีเจอร์:
+
 - 🔄 **Auto Retry**: ลองใหม่อัตโนมัติเมื่อ request ล้มเหลว
 - ⏰ **Timeout Handling**: จัดการ timeout และ server sleep
 - 🎯 **Smart Wake-up**: ปลุกเซิร์ฟเวอร์อัตโนมัติ
@@ -107,7 +113,7 @@ NODE_ENV=production
 PORT=10000
 JWT_SECRET=your-super-secret-jwt-key-change-this
 DB_HOST=your-database-host
-DB_USER=your-database-user  
+DB_USER=your-database-user
 DB_PASSWORD=your-database-password
 DB_NAME=your-database-name
 DB_SSL=true
@@ -117,23 +123,27 @@ RENDER_SERVICE_URL=https://your-service-name.onrender.com
 ### 5. ตั้งค่าฐานข้อมูล
 
 #### ตัวเลือก 1: ใช้ Render PostgreSQL (แนะนำ)
+
 1. สร้าง PostgreSQL service ใน Render
 2. เปลี่ยนโค้ดให้รองรับ PostgreSQL
 
 #### ตัวเลือก 2: ใช้ External MySQL
+
 1. ใช้ PlanetScale, Railway, หรือ AWS RDS
 2. ตั้งค่า SSL connection
 
 #### ตัวเลือก 3: ใช้ SQLite (สำหรับ demo)
+
 ```javascript
 // เปลี่ยนใน index.js
-import sqlite3 from 'sqlite3';
+import sqlite3 from "sqlite3";
 // แทนที่ MySQL connection
 ```
 
 ### 6. Deploy Frontend
 
 #### ตัวเลือก 1: Netlify
+
 ```bash
 cd c:\\Users\\NT2_Admin\\Desktop\\webtemplate\\health
 npm run build
@@ -141,12 +151,14 @@ npm run build
 ```
 
 #### ตัวเลือก 2: Vercel
+
 ```bash
 npm install -g vercel
 vercel --prod
 ```
 
 #### ตัวเลือก 3: Render Static Site
+
 1. สร้าง Static Site ใน Render
 2. Connect repository
 3. Build Command: `npm run build`
@@ -157,6 +169,7 @@ vercel --prod
 ### 1. External Monitoring (แนะนำ)
 
 ใช้บริการฟรีเช่น:
+
 - **UptimeRobot**: ping server ทุก 5 นาที
 - **StatusCake**: monitoring และ alerting
 - **Pingdom**: basic monitoring
@@ -168,16 +181,17 @@ vercel --prod
 ใช้ `ApiManager.js` ที่สร้างไว้:
 
 ```javascript
-import apiManager, { ServerWakeUp, ConnectionIndicator } from './utils/ApiManager';
+import apiManager, {
+  ServerWakeUp,
+  ConnectionIndicator,
+} from "./utils/ApiManager";
 
 function App() {
   return (
     <div className="App">
       <ConnectionIndicator />
       {/* แสดง ServerWakeUp component เมื่อเซิร์ฟเวอร์หลับ */}
-      <Router>
-        {/* Your routes */}
-      </Router>
+      <Router>{/* Your routes */}</Router>
     </div>
   );
 }
@@ -192,7 +206,7 @@ function App() {
 name: Keep Alive
 on:
   schedule:
-    - cron: '*/10 * * * *'  # ทุก 10 นาที
+    - cron: "*/10 * * * *" # ทุก 10 นาที
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
@@ -204,12 +218,14 @@ jobs:
 ## การตรวจสอบและแก้ไขปัญหา
 
 ### 1. ตรวจสอบ Logs
+
 ```bash
 # ใน Render Dashboard
 # ไปที่ "Logs" tab เพื่อดู real-time logs
 ```
 
 ### 2. Test Health Endpoints
+
 ```bash
 # ตรวจสอบสถานะ
 curl https://your-service.onrender.com/api/health
@@ -219,26 +235,30 @@ curl https://your-service.onrender.com/api/ping
 ```
 
 ### 3. Database Connection Issues
+
 ```javascript
 // ตรวจสอบใน logs หา error messages เช่น:
 // "PROTOCOL_CONNECTION_LOST"
-// "ECONNRESET" 
+// "ECONNRESET"
 // "ETIMEDOUT"
 ```
 
 ## Performance Optimization
 
 ### 1. Database Optimization
+
 - ใช้ Connection Pool
 - เพิ่ม Database Indexes
 - Cache frequently accessed data
 
 ### 2. API Response Optimization
+
 - Implement response compression
 - Use pagination for large datasets
 - Cache static responses
 
 ### 3. Client-side Optimization
+
 - Implement proper loading states
 - Use React.memo for expensive components
 - Add service worker for offline support
@@ -246,39 +266,46 @@ curl https://your-service.onrender.com/api/ping
 ## Security Considerations
 
 ### 1. Environment Variables
+
 - ใช้ JWT secret ที่แข็งแรง
 - เปลี่ยน default passwords
 - เปิดใช้ SSL/TLS
 
 ### 2. CORS Configuration
+
 ```javascript
-app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+  })
+);
 ```
 
 ### 3. Rate Limiting
+
 ```javascript
-import rateLimit from 'express-rate-limit';
+import rateLimit from "express-rate-limit";
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
 });
 
-app.use('/api/', limiter);
+app.use("/api/", limiter);
 ```
 
 ## ต้นทุนและการจัดการ
 
 ### Free Tier Limits:
+
 - 🆓 **0 บาท/เดือน**
 - ⏰ Sleep หลัง 15 นาที
 - 📊 512MB RAM
 - 🌐 100GB Bandwidth
 
 ### การ Upgrade:
+
 - 💰 **$7/เดือน** สำหรับ always-on service
 - 📈 1GB RAM, dedicated CPU
 - 🚀 ไม่มี sleep mode
@@ -292,6 +319,6 @@ app.use('/api/', limiter);
 ✅ **Health Check Endpoints** - ตรวจสอบสถานะ  
 ✅ **Retry Logic** - ลองใหม่เมื่อล้มเหลว  
 ✅ **Error Handling** - จัดการ error ครบถ้วน  
-✅ **Frontend API Manager** - ระบบ reconnect ฝั่ง client  
+✅ **Frontend API Manager** - ระบบ reconnect ฝั่ง client
 
 Deploy ได้เลย! 🚀

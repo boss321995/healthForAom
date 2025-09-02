@@ -1,6 +1,7 @@
 # 🚀 ขั้นตอนการ Deploy บน Render (เริ่มจากศูนย์)
 
 ## ✅ เสร็จแล้ว: เตรียมโค้ด
+
 - โค้ดถูก push ขึ้น GitHub repository แล้ว
 - โครงสร้างพร้อมสำหรับ Render deployment
 
@@ -17,6 +18,7 @@
 ### 2. สร้าง Database Service ก่อน (10 นาที)
 
 #### ตัวเลือก A: PostgreSQL (แนะนำ - ฟรี 90 วัน)
+
 1. ใน Render Dashboard → คลิก **"New +"**
 2. เลือก **"PostgreSQL"**
 3. ตั้งค่าดังนี้:
@@ -31,6 +33,7 @@
 5. **สำคัญ**: เก็บ Connection String ไว้ใช้ในขั้นตอนถัดไป
 
 #### ตัวเลือก B: External MySQL (ถาวร แต่ต้องหาที่ host)
+
 - ใช้ PlanetScale, Railway, หรือ Aiven
 - สมัครและสร้าง MySQL database
 - เก็บ connection details ไว้
@@ -96,10 +99,11 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
 
 1. เข้าไปที่ **Shell** tab ใน Render dashboard
 2. รัน migration script:
+
    ```bash
    # ถ้าใช้ PostgreSQL
    psql $DATABASE_URL -f migrations/001_initial_schema.sql
-   
+
    # หรือ ถ้าใช้ MySQL external
    mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrations/001_initial_schema.sql
    ```
@@ -115,6 +119,7 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
 ### 10. ตั้งค่า Keep-Alive (ป้องกัน Sleep)
 
 #### ตัวเลือก A: UptimeRobot (แนะนำ - ฟรี)
+
 1. ไปที่ [uptimerobot.com](https://uptimerobot.com)
 2. สมัครบัญชีฟรี
 3. เพิ่ม monitor:
@@ -125,13 +130,14 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
    ```
 
 #### ตัวเลือก B: GitHub Actions (ฟรี)
+
 1. ใน repository สร้างไฟล์ `.github/workflows/keep-alive.yml`
 2. เพิ่มโค้ด:
    ```yaml
    name: Keep Alive
    on:
      schedule:
-       - cron: '*/10 * * * *'
+       - cron: "*/10 * * * *"
    jobs:
      ping:
        runs-on: ubuntu-latest
@@ -144,14 +150,17 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
 ### ✅ สิ่งที่ควรทำ:
 
 1. **บันทึก URLs**:
+
    - API URL: `https://your-service.onrender.com`
    - Health Check: `https://your-service.onrender.com/api/health`
 
 2. **ตรวจสอบ Logs**:
+
    - ไปที่ **Logs** tab ใน Render dashboard
    - ดูว่ามี error หรือไม่
 
 3. **ทดสอบ Sleep/Wake**:
+
    - รอ 15 นาที (server จะหลับ)
    - ลองเข้าใหม่ (ควรใช้เวลา 20-60 วิในการตื่น)
 
@@ -162,14 +171,17 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
 ### 🔧 การแก้ไขปัญหาทั่วไป:
 
 #### ❌ Build Failed
+
 - ตรวจสอบ `package.json` ใน `/server` folder
 - ดู error ใน Build Logs
 
 #### ❌ Database Connection Error
+
 - ตรวจสอบ Environment Variables
 - ใช้ `/api/health` เพื่อ debug
 
 #### ❌ Service ไม่ตื่น
+
 - ตรวจสอบ UptimeRobot setup
 - ดู keep-alive logs
 
@@ -187,4 +199,4 @@ RENDER_SERVICE_URL=https://health-management-api.onrender.com
 
 ---
 
-*หากมีปัญหาในการ deploy สามารถดู error ใน Render logs หรือทดสอบผ่าน health endpoints*
+_หากมีปัญหาในการ deploy สามารถดู error ใน Render logs หรือทดสอบผ่าน health endpoints_

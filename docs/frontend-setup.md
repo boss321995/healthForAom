@@ -19,10 +19,11 @@ REACT_APP_API_URL=https://your-service-name.onrender.com/api
 ```javascript
 // src/utils/ApiManager.js
 class ApiManager {
-  constructor(baseURL = '/api') {
+  constructor(baseURL = "/api") {
     // ใช้ environment variable หรือ fallback
-    this.baseURL = process.env.REACT_APP_API_URL || 
-                   'https://your-service-name.onrender.com/api';
+    this.baseURL =
+      process.env.REACT_APP_API_URL ||
+      "https://your-service-name.onrender.com/api";
     // ...rest of code
   }
 }
@@ -34,21 +35,21 @@ class ApiManager {
 
 ```javascript
 // src/App.js
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ConnectionIndicator } from './utils/ApiManager';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ConnectionIndicator } from "./utils/ApiManager";
 
 // Import components
-import LandingPage from './components/LandingPage';
-import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard';
+import LandingPage from "./components/LandingPage";
+import LoginPage from "./components/LoginPage";
+import Dashboard from "./components/Dashboard";
 
 function App() {
   return (
     <div className="App">
       {/* แสดงสถานะการเชื่อมต่อ */}
       <ConnectionIndicator />
-      
+
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -72,15 +73,15 @@ export default App;
 // const response = await fetch('/api/auth/login', { ... });
 
 // NEW:
-import apiManager from '../utils/ApiManager';
+import apiManager from "../utils/ApiManager";
 
 const handleLogin = async (credentials) => {
   try {
-    const data = await apiManager.post('/auth/login', credentials);
+    const data = await apiManager.post("/auth/login", credentials);
     // Handle success
   } catch (error) {
     // ApiManager จะจัดการ retry และ wake-up อัตโนมัติ
-    console.error('Login failed:', error.message);
+    console.error("Login failed:", error.message);
   }
 };
 ```
@@ -89,8 +90,11 @@ const handleLogin = async (credentials) => {
 
 ```javascript
 // src/components/Dashboard.js
-import React, { useState, useEffect } from 'react';
-import apiManager, { useConnectionStatus, ServerWakeUp } from '../utils/ApiManager';
+import React, { useState, useEffect } from "react";
+import apiManager, {
+  useConnectionStatus,
+  ServerWakeUp,
+} from "../utils/ApiManager";
 
 function Dashboard() {
   const [loading, setLoading] = useState(false);
@@ -100,10 +104,10 @@ function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const result = await apiManager.get('/health-metrics');
+      const result = await apiManager.get("/health-metrics");
       setData(result);
     } catch (error) {
-      console.error('Failed to fetch data:', error);
+      console.error("Failed to fetch data:", error);
     } finally {
       setLoading(false);
     }
@@ -128,11 +132,13 @@ function Dashboard() {
 ### ตัวเลือก A: Netlify (แนะนำ - ฟรี)
 
 1. **Build Project:**
+
    ```bash
    npm run build
    ```
 
 2. **Deploy ไปยัง Netlify:**
+
    - ไปที่ [netlify.com](https://netlify.com)
    - Login ด้วย GitHub
    - คลิก "New site from Git"
@@ -151,11 +157,13 @@ function Dashboard() {
 ### ตัวเลือก B: Vercel
 
 1. **Install Vercel CLI:**
+
    ```bash
    npm install -g vercel
    ```
 
 2. **Deploy:**
+
    ```bash
    vercel --prod
    ```
@@ -178,14 +186,17 @@ function Dashboard() {
 ### Test Checklist:
 
 1. **✅ Basic Connection:**
+
    - เปิด frontend URL
    - ตรวจสอบว่า ConnectionIndicator แสดงสีเขียว
 
 2. **✅ API Calls:**
+
    - ลองสมัครสมาชิก/เข้าสู่ระบบ
    - ตรวจสอบว่าข้อมูลถูกส่งไปยัง API
 
 3. **✅ Sleep Mode Handling:**
+
    - รอ 15 นาที (ให้ API หลับ)
    - ลองใช้งาน frontend อีกครั้ง
    - ควรเห็น loading และ auto wake-up
@@ -201,11 +212,11 @@ function Dashboard() {
 
 ```javascript
 // public/sw.js
-self.addEventListener('fetch', event => {
+self.addEventListener("fetch", (event) => {
   // Cache API responses
-  if (event.request.url.includes('/api/')) {
+  if (event.request.url.includes("/api/")) {
     event.respondWith(
-      caches.match(event.request).then(response => {
+      caches.match(event.request).then((response) => {
         return response || fetch(event.request);
       })
     );
@@ -217,7 +228,7 @@ self.addEventListener('fetch', event => {
 
 ```javascript
 // src/hooks/useOffline.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 export const useOffline = () => {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -226,12 +237,12 @@ export const useOffline = () => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -243,9 +254,9 @@ export const useOffline = () => {
 
 ```javascript
 // src/components/NetworkStatus.js
-import React from 'react';
-import { useOffline } from '../hooks/useOffline';
-import { useConnectionStatus } from '../utils/ApiManager';
+import React from "react";
+import { useOffline } from "../hooks/useOffline";
+import { useConnectionStatus } from "../utils/ApiManager";
 
 export const NetworkStatus = () => {
   const isOffline = useOffline();
@@ -267,11 +278,7 @@ export const NetworkStatus = () => {
     );
   }
 
-  return (
-    <div className="network-status connected">
-      🟢 เชื่อมต่อแล้ว
-    </div>
-  );
+  return <div className="network-status connected">🟢 เชื่อมต่อแล้ว</div>;
 };
 ```
 
@@ -296,7 +303,7 @@ export const NetworkStatus = () => {
 หลังจากขั้นตอนเหล่านี้คุณจะมี:
 
 - ✅ Frontend ที่เชื่อมต่อกับ Render API
-- ✅ Auto retry และ error handling  
+- ✅ Auto retry และ error handling
 - ✅ Sleep mode detection และ wake-up
 - ✅ Connection status indicators
 - ✅ Offline support (ถ้าเพิ่ม)

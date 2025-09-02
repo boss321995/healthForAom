@@ -8,6 +8,7 @@ import HealthAnalytics from './healthAnalytics.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -144,7 +145,6 @@ app.get('/', (req, res) => {
 
 // Debug route to check files
 app.get('/debug/files', (req, res) => {
-  const fs = require('fs');
   const distPath = path.join(__dirname, 'dist');
   
   try {

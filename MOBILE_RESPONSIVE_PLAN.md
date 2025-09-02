@@ -5,6 +5,7 @@
 ## 📋 **Current Issues Analysis**
 
 ### ❌ **Problems Found**
+
 1. **Dashboard**: Cards ไม่ responsive บนหจจ้าเล็ก
 2. **HealthAnalytics**: Charts และ tables ล้นออกจากจอ
 3. **Forms**: Input fields เล็กเกินไปสำหรับมือถือ
@@ -16,13 +17,16 @@
 ### **Day 1: Dashboard Mobile Optimization**
 
 #### ✅ Tasks:
+
 1. **Grid Layout Optimization**
+
    ```css
    /* เปลี่ยนจาก md:grid-cols-2 lg:grid-cols-3 */
    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3
    ```
 
 2. **Card Size Adjustment**
+
    ```css
    /* เพิ่ม min-height และ padding ที่เหมาะสม */
    min-h-[120px] p-4 sm:p-6
@@ -39,11 +43,14 @@
 ### **Day 2: HealthAnalytics Mobile Charts**
 
 #### ✅ Tasks:
+
 1. **Status Tags Reorganization**
+
    - เปลี่ยนจาก flex แนวนอนเป็น grid 2 คอลัมน์บนมือถือ
    - ลดขนาด font และ padding
 
 2. **Debug Panel Responsive**
+
    - เปลี่ยนจาก 3 คอลัมน์เป็น 1 คอลัมน์บนมือถือ
    - ซ่อนข้อมูลที่ไม่จำเป็นบนจอเล็ก
 
@@ -53,7 +60,9 @@
 ### **Day 3: Forms และ Navigation**
 
 #### ✅ Tasks:
+
 1. **Tab Navigation Touch-Friendly**
+
    ```css
    /* เพิ่มขนาด touch target */
    py-3 px-4 sm:py-2 sm:px-3
@@ -62,6 +71,7 @@
    ```
 
 2. **Form Inputs Mobile Optimization**
+
    ```css
    /* เพิ่มขนาด input */
    py-3 px-4 text-base
@@ -74,11 +84,14 @@
 ### **Day 4: Advanced Mobile Features**
 
 #### ✅ Tasks:
+
 1. **Swipe Gestures** (Optional)
+
    - เพิ่ม swipe สำหรับ tabs
    - Touch events สำหรับ navigation
 
 2. **Mobile-Specific Components**
+
    - Bottom navigation สำหรับมือถือ
    - Collapsible sections
 
@@ -89,13 +102,16 @@
 ### **Day 5: Testing และ Fine-tuning**
 
 #### ✅ Tasks:
+
 1. **Device Testing**
+
    - iPhone SE (375px)
-   - iPhone 12/13 (390px) 
+   - iPhone 12/13 (390px)
    - Android Small (360px)
    - iPad (768px)
 
 2. **Browser Testing**
+
    - Safari iOS
    - Chrome Android
    - Samsung Internet
@@ -162,10 +178,7 @@ const TabButton = ({ active, onClick, children }) => (
       font-semibold
       min-h-[44px] sm:min-h-auto
       transition-all
-      ${active ? 
-        'bg-blue-600 text-white' : 
-        'text-blue-700 hover:bg-blue-50'
-      }
+      ${active ? "bg-blue-600 text-white" : "text-blue-700 hover:bg-blue-50"}
     `}
   >
     {children}
@@ -179,13 +192,13 @@ const TabButton = ({ active, onClick, children }) => (
 
 ### **Before vs After Metrics**
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Mobile Usability Score | 60% | 95%+ |
-| Touch Target Size | ❌ | ✅ 44px+ |
-| Horizontal Scrolling | ❌ | ✅ None |
-| Text Readability | ❌ | ✅ 16px+ |
-| Loading Speed (Mobile) | 3.5s | <2s |
+| Metric                 | Before | After    |
+| ---------------------- | ------ | -------- |
+| Mobile Usability Score | 60%    | 95%+     |
+| Touch Target Size      | ❌     | ✅ 44px+ |
+| Horizontal Scrolling   | ❌     | ✅ None  |
+| Text Readability       | ❌     | ✅ 16px+ |
+| Loading Speed (Mobile) | 3.5s   | <2s      |
 
 ### **User Experience Improvements**
 
@@ -199,18 +212,21 @@ const TabButton = ({ active, onClick, children }) => (
 ## 🎮 **Quick Start Implementation**
 
 ### **Step 1: เริ่มจาก Dashboard.js**
+
 ```bash
 # ตรวจสอบ responsive breakpoints ปัจจุบัน
 grep -r "md:grid-cols\|lg:grid-cols" src/components/Dashboard.js
 ```
 
 ### **Step 2: ทดสอบบนจริง**
+
 ```bash
 # เปิด Chrome DevTools > Toggle Device Toolbar
 # ทดสอบหลายขนาดจอ
 ```
 
 ### **Step 3: วัดผล**
+
 ```bash
 # ใช้ Google PageSpeed Insights
 # ทดสอบ Mobile Usability
