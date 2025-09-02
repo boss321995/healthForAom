@@ -7,9 +7,10 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "webpack serve --mode development",
-    "build": "webpack --mode production && cp -r dist server/dist 2>/dev/null || xcopy dist server\\dist\\ /E /I /Y 2>nul || echo 'Copy completed'",
-    "build:server": "npm run build",
-    "copy:dist": "cp -r dist server/dist || xcopy dist server\\dist\\ /E /I /Y",
+    "build": "webpack --mode production",
+    "build:server": "npm run build && npm run copy:dist",
+    "copy:dist": "if not exist server\\dist mkdir server\\dist && xcopy dist server\\dist\\ /E /I /Y || (mkdir -p server/dist && cp -r dist/* server/dist/)",
+    "postinstall": "npm run build && npm run copy:dist",
     "server": "node server/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "deploy:vercel": "npm run build && vercel --prod",
