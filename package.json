@@ -9,7 +9,7 @@
     "dev": "webpack serve --mode development",
     "build": "webpack --mode production",
     "build:server": "npm run build && npm run copy:dist",
-    "copy:dist": "if not exist server\\dist mkdir server\\dist && xcopy dist server\\dist\\ /E /I /Y || (mkdir -p server/dist && cp -r dist/* server/dist/)",
+    "copy:dist": "node copy-dist.js",
     "postinstall": "npm run build && npm run copy:dist",
     "server": "node server/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
