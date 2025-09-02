@@ -121,12 +121,12 @@ const authenticateToken = (req, res, next) => {
 // ===============================
 
 // Serve static files from dist folder  
-const distPath = path.join(__dirname, '..', 'dist');
+const distPath = path.join(process.cwd(), '..', 'dist');
 app.use(express.static(distPath));
 
 // Root route - Serve frontend app
 app.get('/', (req, res) => {
-  const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+  const indexPath = path.join(process.cwd(), '..', 'dist', 'index.html');
   
   console.log('🔍 Looking for React app at:', indexPath);
   console.log('📁 __dirname is:', __dirname);
@@ -1933,7 +1933,7 @@ process.on('SIGINT', () => {
 
 // Catch-all route for React SPA - must be LAST
 app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+  const indexPath = path.join(process.cwd(), '..', 'dist', 'index.html');
   
   // Check if request is for API
   if (req.path.startsWith('/api/')) {
@@ -2001,11 +2001,13 @@ async function startServer() {
 
 // Try to build frontend if not exists
 async function ensureFrontendBuilt() {
-  const distPath = path.join(__dirname, '..', 'dist');
+  const distPath = path.join(process.cwd(), '..', 'dist');
   const indexPath = path.join(distPath, 'index.html');
   
   console.log('🔍 Checking for frontend files...');
   console.log('📁 Looking in:', distPath);
+  console.log('📂 Current working directory:', process.cwd());
+  console.log('📂 __dirname is:', __dirname);
   
   if (!fs.existsSync(indexPath)) {
     console.log('⚠️ Frontend not found, attempting to build...');

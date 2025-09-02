@@ -5,7 +5,19 @@ services:
     plan: free
     rootDir: server
     buildCommand: |
-      cd .. && npm install && npm run build && cd server && npm install
+      echo "🔍 Current directory: $(pwd)"
+      echo "📂 Contents: $(ls -la)"
+      cd .. 
+      echo "🔍 After cd ..: $(pwd)"
+      echo "📂 Contents: $(ls -la)"
+      npm install 
+      echo "🔧 Running npm run build..."
+      npm run build
+      echo "✅ Build completed, checking dist..."
+      ls -la dist/
+      cd server 
+      echo "🔍 Back in server: $(pwd)"
+      npm install
     startCommand: node index.js
     envVars:
       - key: NODE_ENV
