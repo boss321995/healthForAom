@@ -114,161 +114,48 @@ const authenticateToken = (req, res, next) => {
 // � Root & Welcome Routes
 // ===============================
 
-// Root route - Welcome HTML page
+// Root route - Redirect to frontend
 app.get('/', (req, res) => {
-  const htmlPage = `
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🏥 Health Management API</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
+  // Check if request is from browser (HTML request)
+  const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+  
+  if (acceptsHtml) {
+    // Redirect to frontend URL (will update after deployment)
+    const frontendUrl = process.env.FRONTEND_URL || 'https://healthhub-management.netlify.app';
+    res.redirect(frontendUrl);
+  } else {
+    // Return JSON for API clients
+    res.status(200).json({
+      message: '🏥 Health Management API',
+      version: '1.0.0',
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      frontend_url: process.env.FRONTEND_URL || 'https://healthhub-management.netlify.app',
+      api_documentation: '/api',
+      health_check: '/api/health',
+      endpoints: {
+        health: '/api/health',
+        ping: '/api/ping',
+        auth: {
+          register: 'POST /api/auth/register',
+          login: 'POST /api/auth/login'
+        },
+        users: {
+          profile: 'GET /api/users/profile',
+          updateProfile: 'PUT /api/users/profile'
+        },
+        health_data: {
+          metrics: 'GET/POST /api/health/metrics',
+          behavior: 'GET/POST /api/health/behavior',
+          analysis: 'POST /api/health/analysis'
+        },
+        setup: {
+          migrate: 'POST /api/setup/migrate',
+          tables: 'GET /api/setup/tables'
         }
-        .container {
-            max-width: 800px;
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-        }
-        h1 { font-size: 3em; margin-bottom: 20px; }
-        .status { 
-            background: rgba(40, 167, 69, 0.8);
-            padding: 10px 20px;
-            border-radius: 50px;
-            display: inline-block;
-            margin: 20px 0;
-            font-weight: bold;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .info-card {
-            background: rgba(255,255,255,0.1);
-            padding: 20px;
-            border-radius: 15px;
-            backdrop-filter: blur(5px);
-        }
-        .endpoint-list {
-            background: rgba(255,255,255,0.1);
-            padding: 25px;
-            border-radius: 15px;
-            margin: 20px 0;
-            text-align: left;
-        }
-        .endpoint-list h3 { text-align: center; margin-bottom: 15px; }
-        .endpoint-item {
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-        }
-        .endpoint-item:last-child { border-bottom: none; }
-        .method { 
-            background: rgba(40, 167, 69, 0.8);
-            padding: 2px 8px;
-            border-radius: 5px;
-            font-size: 0.8em;
-            margin-right: 10px;
-        }
-        .method.post { background: rgba(0, 123, 255, 0.8); }
-        .method.put { background: rgba(255, 193, 7, 0.8); }
-        .footer {
-            margin-top: 30px;
-            opacity: 0.8;
-            font-size: 0.9em;
-        }
-        .test-button {
-            background: rgba(40, 167, 69, 0.8);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 25px;
-            cursor: pointer;
-            margin: 10px;
-            font-size: 1em;
-            transition: all 0.3s;
-        }
-        .test-button:hover {
-            background: rgba(40, 167, 69, 1);
-            transform: translateY(-2px);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🏥 Health Management API</h1>
-        <div class="status">✅ Service Running</div>
-        
-        <div class="info-grid">
-            <div class="info-card">
-                <h3>📊 System Info</h3>
-                <p><strong>Version:</strong> 1.0.0</p>
-                <p><strong>Environment:</strong> Production</p>
-                <p><strong>Database:</strong> PostgreSQL Connected</p>
-            </div>
-            <div class="info-card">
-                <h3>🚀 Quick Test</h3>
-                <button class="test-button" onclick="testAPI()">Test API Health</button>
-                <button class="test-button" onclick="viewDocs()">API Documentation</button>
-            </div>
-        </div>
-
-        <div class="endpoint-list">
-            <h3>🔗 Available Endpoints</h3>
-            <div class="endpoint-item"><span class="method">GET</span>/api/health - System health check</div>
-            <div class="endpoint-item"><span class="method">GET</span>/api - API documentation</div>
-            <div class="endpoint-item"><span class="method post">POST</span>/api/auth/register - User registration</div>
-            <div class="endpoint-item"><span class="method post">POST</span>/api/auth/login - User login</div>
-            <div class="endpoint-item"><span class="method">GET</span>/api/users/profile - Get user profile</div>
-            <div class="endpoint-item"><span class="method put">PUT</span>/api/users/profile - Update profile</div>
-            <div class="endpoint-item"><span class="method">GET</span>/api/health/metrics - Get health metrics</div>
-            <div class="endpoint-item"><span class="method post">POST</span>/api/health/metrics - Add health metrics</div>
-            <div class="endpoint-item"><span class="method post">POST</span>/api/health/analysis - AI health analysis</div>
-        </div>
-
-        <div class="footer">
-            <p>🏥 Health Management System</p>
-            <p>Render Deployment • PostgreSQL Database • Keep-Alive Protection</p>
-            <p id="timestamp">Last updated: ${new Date().toLocaleString('th-TH')}</p>
-        </div>
-    </div>
-
-    <script>
-        function testAPI() {
-            window.open('/api/health', '_blank');
-        }
-        
-        function viewDocs() {
-            window.open('/api', '_blank');
-        }
-        
-        // Update timestamp every minute
-        setInterval(() => {
-            document.getElementById('timestamp').textContent = 
-                'Last updated: ' + new Date().toLocaleString('th-TH');
-        }, 60000);
-    </script>
-</body>
-</html>`;
-
-  res.send(htmlPage);
+      }
+    });
+  }
 });
 
 // API Info route
