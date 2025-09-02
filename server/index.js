@@ -1,5 +1,6 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
+import pkg from 'pg';
+const { Pool } = pkg;
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -15,20 +16,17 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Database connection with Pool and Reconnection
+// Database connection with PostgreSQL
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
+  user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'health_management',
-  charset: 'utf8mb4',
-  // Connection Pool สำหรับ Production
-  connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true,
-  // Render-specific optimizations
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  port: process.env.DB_PORT || 5432,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  max: 10, // connection pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 };
 
 let db;
@@ -40,17 +38,14 @@ async function initDatabase() {
     connectionAttempts++;
     console.log(`🔄 Database connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
     
-    // ใช้ Connection Pool สำหรับ production
-    if (process.env.NODE_ENV === 'production') {
-      db = mysql.createPool(dbConfig);
-      console.log('🔗 Connected to MySQL database with connection pool');
-    } else {
-      db = await mysql.createConnection(dbConfig);
-      console.log('🔗 Connected to MySQL database');
-    }
+    // Create PostgreSQL connection pool
+    db = new Pool(dbConfig);
+    console.log('🔗 Connected to PostgreSQL database with connection pool');
     
     // Test connection
-    await db.execute('SELECT 1');
+    const client = await db.connect();
+    await client.query('SELECT 1');
+    client.release();
     console.log('✅ Database connection verified');
     connectionAttempts = 0; // Reset on success
     
@@ -61,8 +56,12 @@ async function initDatabase() {
       console.log(`⏳ Retrying in 5 seconds...`);
       setTimeout(initDatabase, 5000);
     } else {
-      console.error('💀 Max connection attempts reached. Exiting...');
-      process.exit(1);
+      console.error('💀 Max connection attempts reached.');
+      console.log('🔧 Starting server without database (will retry on first request)');
+      
+      // Don't exit, just log and continue
+      // This allows health checks to work even without DB
+      db = null;
     }
   }
 }
@@ -81,23 +80,23 @@ async function handleDatabaseError(error, operation = 'unknown') {
   throw error;
 }
 
-// Database query wrapper with retry logic
+// Database query wrapper with retry logic for PostgreSQL
 async function executeQuery(query, params = []) {
   const maxRetries = 3;
   let lastError;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await db.execute(query, params);
+      const result = await db.query(query, params);
       return result;
     } catch (error) {
       lastError = error;
       console.error(`❌ Query attempt ${attempt} failed:`, error.message);
       
       if (attempt < maxRetries && 
-          (error.code === 'PROTOCOL_CONNECTION_LOST' || 
-           error.code === 'ECONNRESET' || 
-           error.code === 'ETIMEDOUT')) {
+          (error.code === 'ECONNRESET' || 
+           error.code === 'ETIMEDOUT' ||
+           error.code === 'ENOTFOUND')) {
         
         console.log(`⏳ Retrying query in ${attempt * 1000}ms...`);
         await new Promise(resolve => setTimeout(resolve, attempt * 1000));
@@ -146,15 +145,27 @@ const authenticateToken = (req, res, next) => {
 // Health check endpoint to prevent sleep mode
 app.get('/api/health', async (req, res) => {
   try {
-    // Test database connection
-    await executeQuery('SELECT 1 as health_check');
+    let dbStatus = 'disconnected';
+    
+    // Test database connection if available
+    if (db) {
+      try {
+        await executeQuery('SELECT 1 as health_check');
+        dbStatus = 'connected';
+      } catch (error) {
+        console.error('Database health check failed:', error.message);
+        dbStatus = 'error';
+      }
+    }
     
     res.status(200).json({
-      status: 'healthy',
+      status: dbStatus === 'connected' ? 'healthy' : 'partial',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      database: 'connected'
+      database: dbStatus,
+      message: dbStatus === 'disconnected' ? 'Database not configured' : 
+               dbStatus === 'error' ? 'Database connection error' : 'All systems operational'
     });
   } catch (error) {
     console.error('❌ Health check failed:', error.message);

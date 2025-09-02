@@ -1,0 +1,94 @@
+# Environment Variables for Render Deployment
+# คัดลอกค่าเหล่านี้ไปใส่ใน Render Dashboard → Environment tab
+
+# ======================
+# Required Variables
+# ======================
+
+NODE_ENV=production
+PORT=10000
+
+# ======================
+# Security
+# ======================
+
+# สร้าง JWT secret ที่แข็งแรง (เปลี่ยนค่านี้!)
+JWT_SECRET=health_app_super_secret_jwt_key_2025_change_this_to_your_own
+
+# ======================
+# Database Configuration
+# ======================
+
+# ตัวอย่างสำหรับ Render PostgreSQL (Free 90 days)
+DB_HOST=dpg-xxxxxxxxxxxxxxxx-a.singapore-postgres.render.com
+DB_USER=health_user
+DB_PASSWORD=your-generated-password
+DB_NAME=health_management
+DB_SSL=true
+
+# หรือ ตัวอย่างสำหรับ External MySQL
+# DB_HOST=your-mysql-host.com
+# DB_USER=your-mysql-user
+# DB_PASSWORD=your-mysql-password
+# DB_NAME=health_management
+# DB_SSL=true
+
+# ======================
+# Render Service URL
+# ======================
+
+# ใส่หลังจาก deploy เสร็จแล้ว (รอบที่ 2)
+# RENDER_SERVICE_URL=https://your-service-name.onrender.com
+
+# ======================
+# Optional Configuration
+# ======================
+
+# CORS Configuration (ถ้าต้องการ limit domain)
+# CORS_ORIGIN=https://your-frontend-domain.com
+
+# Keep-alive Configuration
+ENABLE_KEEP_ALIVE=true
+KEEP_ALIVE_INTERVAL=600000
+
+# API Configuration
+API_TIMEOUT=30000
+MAX_RETRIES=3
+
+# Health Check
+HEALTH_CHECK_ENABLED=true
+
+# Logging
+LOG_LEVEL=info
+
+# ======================
+# การใส่ใน Render
+# ======================
+
+# 1. ไปที่ Render Dashboard
+# 2. เลือก Web Service ที่สร้าง
+# 3. คลิกแท็บ "Environment"
+# 4. คลิก "Add Environment Variable"
+# 5. ใส่ Key และ Value (ทีละตัว)
+# 6. คลิก "Save Changes"
+
+# ตัวอย่าง:
+# Key: NODE_ENV
+# Value: production
+
+# Key: JWT_SECRET  
+# Value: health_app_super_secret_jwt_key_2025_change_this_to_your_own
+
+# Key: DB_HOST
+# Value: dpg-xxxxxxxxxxxxxxxx-a.singapore-postgres.render.com
+
+# และต่อไปเรื่อยๆ...
+
+# ======================
+# Security Notes
+# ======================
+
+# 🔒 JWT_SECRET: ใช้ random string ยาวๆ อย่างน้อย 32 characters
+# 🔒 DB_PASSWORD: อย่าแชร์หรือเก็บใน code
+# 🔒 Environment Variables: จะถูกเข้ารหัสโดย Render
+# 🔒 SSL: เปิดใช้เสมอใน production
