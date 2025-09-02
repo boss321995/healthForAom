@@ -120,17 +120,18 @@ const authenticateToken = (req, res, next) => {
 // � Root & Welcome Routes
 // ===============================
 
-// Serve static files from dist folder  
-const distPath = path.join(process.cwd(), '..', 'dist');
-app.use(express.static(distPath));
+// Static files will be set dynamically after finding dist folder
 
 // Root route - Serve frontend app
 app.get('/', (req, res) => {
-  const indexPath = path.join(process.cwd(), '..', 'dist', 'index.html');
+  const indexPath = globalDistPath ? 
+    path.join(globalDistPath, 'index.html') :
+    path.join(process.cwd(), '..', 'dist', 'index.html');
   
   console.log('🔍 Looking for React app at:', indexPath);
   console.log('📁 __dirname is:', __dirname);
   console.log('📂 Current working directory:', process.cwd());
+  console.log('📁 Global dist path:', globalDistPath || 'not set');
   
   // Check if dist folder exists
   const distPath = path.join(__dirname, 'dist');
@@ -1933,7 +1934,9 @@ process.on('SIGINT', () => {
 
 // Catch-all route for React SPA - must be LAST
 app.get('*', (req, res) => {
-  const indexPath = path.join(process.cwd(), '..', 'dist', 'index.html');
+  const indexPath = globalDistPath ? 
+    path.join(globalDistPath, 'index.html') :
+    path.join(process.cwd(), '..', 'dist', 'index.html');
   
   // Check if request is for API
   if (req.path.startsWith('/api/')) {
@@ -1941,6 +1944,8 @@ app.get('*', (req, res) => {
   }
   
   console.log('🔄 Serving React app for:', req.path);
+  console.log('📁 Using index path:', indexPath);
+  
   res.sendFile(indexPath, (err) => {
     if (err) {
       console.error('❌ Error serving React app:', err);
@@ -1948,6 +1953,7 @@ app.get('*', (req, res) => {
         <h1>Frontend Not Available</h1>
         <p>Could not load React app from: ${indexPath}</p>
         <p>Error: ${err.message}</p>
+        <p>Global dist path: ${globalDistPath || 'not set'}</p>
       `);
     }
   });
@@ -2001,28 +2007,93 @@ async function startServer() {
 
 // Try to build frontend if not exists
 async function ensureFrontendBuilt() {
-  const distPath = path.join(process.cwd(), '..', 'dist');
-  const indexPath = path.join(distPath, 'index.html');
+  const possibleDistPaths = [
+    path.join(process.cwd(), '..', 'dist'),    // /opt/render/project/dist
+    path.join(process.cwd(), 'dist'),          // /opt/render/project/src/server/dist 
+    path.join(__dirname, '..', 'dist'),        // server/../dist
+    path.join(__dirname, '..', '..', 'dist'),  // server/../../dist
+  ];
   
   console.log('🔍 Checking for frontend files...');
-  console.log('📁 Looking in:', distPath);
-  console.log('📂 Current working directory:', process.cwd());
+  console.log(' Current working directory:', process.cwd());
   console.log('📂 __dirname is:', __dirname);
   
-  if (!fs.existsSync(indexPath)) {
-    console.log('⚠️ Frontend not found, attempting to build...');
-    console.log('❌ Frontend files missing - please run "npm run build" first');
-  } else {
-    console.log('✅ Frontend files already exist');
-    const files = fs.readdirSync(distPath);
-    console.log('📂 Frontend files found:', files.slice(0, 5).join(', '));
+  let foundDistPath = null;
+  
+  for (const distPath of possibleDistPaths) {
+    const indexPath = path.join(distPath, 'index.html');
+    console.log(`🔍 Checking: ${distPath}`);
+    
+    if (fs.existsSync(indexPath)) {
+      console.log(`✅ Found frontend at: ${distPath}`);
+      foundDistPath = distPath;
+      
+      const files = fs.readdirSync(distPath);
+      console.log('📂 Frontend files found:', files.slice(0, 5).join(', '));
+      break;
+    } else {
+      console.log(`❌ Not found: ${distPath}`);
+    }
   }
+  
+  if (!foundDistPath) {
+    console.log('⚠️ Frontend not found in any location');
+    
+    // Try to copy from possible source locations
+    const possibleSources = [
+      '/opt/render/project/dist',
+      '/opt/render/project/src/dist', 
+      path.join(process.cwd(), '..', '..', 'dist'),
+    ];
+    
+    for (const source of possibleSources) {
+      if (fs.existsSync(source)) {
+        const targetPath = path.join(process.cwd(), '..', 'dist');
+        console.log(`📂 Found source at: ${source}, copying to: ${targetPath}`);
+        
+        try {
+          // Copy files
+          if (!fs.existsSync(targetPath)) {
+            fs.mkdirSync(targetPath, { recursive: true });
+          }
+          
+          const files = fs.readdirSync(source);
+          for (const file of files) {
+            const srcFile = path.join(source, file);
+            const destFile = path.join(targetPath, file);
+            
+            if (fs.statSync(srcFile).isFile()) {
+              fs.copyFileSync(srcFile, destFile);
+              console.log(`✅ Copied: ${file}`);
+            }
+          }
+          
+          foundDistPath = targetPath;
+          break;
+        } catch (error) {
+          console.log(`❌ Copy failed: ${error.message}`);
+        }
+      }
+    }
+  }
+  
+  return foundDistPath;
 }
+
+// Global variable for dist path
+let globalDistPath = null;
 
 console.log('🎯 Health Management API - Starting...');
 
 // Ensure frontend is built before starting
-await ensureFrontendBuilt();
+const foundDistPath = await ensureFrontendBuilt();
+globalDistPath = foundDistPath;
+
+// Update static serving path if we found dist elsewhere
+if (foundDistPath) {
+  console.log(`📁 Setting static path to: ${foundDistPath}`);
+  app.use(express.static(foundDistPath));
+}
 
 startServer().catch((error) => {
   console.error('💀 Critical startup error:', error);
