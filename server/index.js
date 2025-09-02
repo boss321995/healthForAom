@@ -703,23 +703,23 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, limit = 10 } = req.query;
     
-    let query = `
-      SELECT * FROM health_metrics 
-      WHERE user_id = $1
-    `;
+    let query = 'SELECT * FROM health_metrics WHERE user_id = $1';
     const params = [req.user.userId];
+    let idx = 2;
 
     if (startDate) {
-      query += ' AND measurement_date >= $' + (params.length + 1);
+      query += ` AND measurement_date >= $${idx}`;
       params.push(startDate);
+      idx++;
     }
 
     if (endDate) {
-      query += ' AND measurement_date <= $' + (params.length + 1);
+      query += ` AND measurement_date <= $${idx}`;
       params.push(endDate);
+      idx++;
     }
 
-    query += ' ORDER BY measurement_date DESC LIMIT $' + (params.length + 1);
+    query += ` ORDER BY measurement_date DESC LIMIT $${idx}`;
     params.push(parseInt(limit, 10));
 
     const metrics = await db.query(query, params);
@@ -824,21 +824,23 @@ app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
              (water_intake_ml::decimal / 1000.0) AS water_intake_liters,
              notes
       FROM health_behavior
-      WHERE user_id = $1
-    `;
+      WHERE user_id = $1`;
     const params = [req.user.userId];
+    let idx = 2;
 
     if (startDate) {
-      query += ' AND behavior_date >= $' + (params.length + 1);
+      query += ` AND behavior_date >= $${idx}`;
       params.push(startDate);
+      idx++;
     }
 
     if (endDate) {
-      query += ' AND behavior_date <= $' + (params.length + 1);
+      query += ` AND behavior_date <= $${idx}`;
       params.push(endDate);
+      idx++;
     }
 
-    query += ' ORDER BY behavior_date DESC LIMIT $' + (params.length + 1);
+    query += ` ORDER BY behavior_date DESC LIMIT $${idx}`;
     params.push(parseInt(limit, 10));
 
     const behaviors = await db.query(query, params);
