@@ -129,14 +129,40 @@ app.get('/', (req, res) => {
   const indexPath = path.join(__dirname, 'dist', 'index.html');
   
   console.log('🔍 Looking for React app at:', indexPath);
+  console.log('📁 __dirname is:', __dirname);
+  console.log('📂 Current working directory:', process.cwd());
+  
+  // Check if dist folder exists
+  const distPath = path.join(__dirname, 'dist');
+  console.log('📁 Dist folder exists:', fs.existsSync(distPath));
+  
+  if (fs.existsSync(distPath)) {
+    try {
+      const files = fs.readdirSync(distPath);
+      console.log('📂 Files in dist:', files);
+    } catch (err) {
+      console.log('❌ Error reading dist folder:', err.message);
+    }
+  }
   
   // Try to serve React app first
   res.sendFile(indexPath, (err) => {
     if (err) {
       console.log('⚠️ React app not found at:', indexPath);
-      console.log('🔄 Redirecting to GitHub Pages');
-      // If React app files are not available, redirect to GitHub Pages
-      res.redirect('https://boss321995.github.io/healthForAom/');
+      console.log('� Error details:', err.message);
+      
+      // Don't redirect, show error page instead
+      res.status(404).send(`
+        <h1>❌ Frontend Files Not Found</h1>
+        <p><strong>Looking for:</strong> ${indexPath}</p>
+        <p><strong>Directory:</strong> ${__dirname}</p>
+        <p><strong>Working Dir:</strong> ${process.cwd()}</p>
+        <p><strong>Dist exists:</strong> ${fs.existsSync(distPath)}</p>
+        <p><strong>Error:</strong> ${err.message}</p>
+        <hr>
+        <p><a href="/debug/files">🔍 Debug Files</a></p>
+        <p><a href="/api">📋 API Documentation</a></p>
+      `);
     } else {
       console.log('✅ Successfully serving React app');
     }
@@ -152,15 +178,45 @@ app.get('/debug/files', (req, res) => {
     res.json({
       distPath: distPath,
       files: files,
-      indexExists: fs.existsSync(path.join(distPath, 'index.html'))
+      indexExists: fs.existsSync(path.join(distPath, 'index.html')),
+      __dirname: __dirname,
+      cwd: process.cwd(),
+      nodeEnv: process.env.NODE_ENV
     });
   } catch (error) {
     res.json({
       distPath: distPath,
       error: error.message,
-      distExists: fs.existsSync(distPath)
+      distExists: fs.existsSync(distPath),
+      __dirname: __dirname,
+      cwd: process.cwd(),
+      nodeEnv: process.env.NODE_ENV
     });
   }
+});
+
+// Debug route to check build process
+app.get('/debug/build', (req, res) => {
+  const rootDistPath = path.join(process.cwd(), 'dist');
+  const serverDistPath = path.join(__dirname, 'dist');
+  
+  res.json({
+    rootDist: {
+      path: rootDistPath,
+      exists: fs.existsSync(rootDistPath),
+      files: fs.existsSync(rootDistPath) ? fs.readdirSync(rootDistPath) : []
+    },
+    serverDist: {
+      path: serverDistPath,
+      exists: fs.existsSync(serverDistPath),
+      files: fs.existsSync(serverDistPath) ? fs.readdirSync(serverDistPath) : []
+    },
+    paths: {
+      __dirname: __dirname,
+      cwd: process.cwd(),
+      relative: path.relative(process.cwd(), __dirname)
+    }
+  });
 });
 
 // API Info route
