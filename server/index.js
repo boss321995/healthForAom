@@ -458,20 +458,16 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     // Find user
-    const [users] = await db.execute(
-      'SELECT user_id, username, email, password_hash, role, is_active FROM users WHERE username = ? OR email = ?',
+    const users = await db.query(
+      'SELECT user_id, username, email, password_hash FROM users WHERE username = $1 OR email = $2',
       [username, username]
     );
 
-    if (users.length === 0) {
+    if (users.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const user = users[0];
-
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Account is deactivated' });
-    }
+    const user = users.rows[0];
 
     // Check password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
