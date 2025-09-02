@@ -481,8 +481,7 @@ app.post('/api/auth/login', async (req, res) => {
       { 
         userId: user.user_id, 
         username: user.username, 
-        email: user.email,
-        role: user.role 
+        email: user.email
       },
       JWT_SECRET,
       { expiresIn: '24h' }
@@ -495,8 +494,7 @@ app.post('/api/auth/login', async (req, res) => {
       user: {
         userId: user.user_id,
         username: user.username,
-        email: user.email,
-        role: user.role
+        email: user.email
       }
     });
 
@@ -514,7 +512,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     // First check if user exists
-    const [users] = await db.execute(
+    const users = await db.query(
       'SELECT user_id, username, email, role FROM users WHERE user_id = ?',
       [req.user.userId]
     );
@@ -523,10 +521,10 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = users[0];
+    const user = users.rows[0];
 
     // Try to get user profile
-    const [profiles] = await db.execute(
+    const profiles = await db.query(
       `SELECT p.*, u.username, u.email 
        FROM user_profiles p 
        JOIN users u ON p.user_id = u.user_id 
@@ -592,14 +590,14 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
     console.log('📊 Sanitized profile data:', sanitizedData);
 
     // Check if profile exists
-    const [existingProfiles] = await db.execute(
+    const existingProfiles = await db.query(
       'SELECT profile_id FROM user_profiles WHERE user_id = ?',
       [req.user.userId]
     );
 
     if (existingProfiles.length === 0) {
       // Create new profile
-      await db.execute(
+      await db.query(
         `INSERT INTO user_profiles 
          (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
           phone, emergency_contact, emergency_phone, medical_conditions, medications) 
@@ -612,7 +610,7 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
       console.log('✅ New profile created for user:', req.user.userId);
     } else {
       // Update existing profile
-      await db.execute(
+      await db.query(
         `UPDATE user_profiles SET 
          full_name = ?, date_of_birth = ?, gender = ?, blood_group = ?,
          height_cm = ?, weight_kg = ?, phone = ?, emergency_contact = ?, emergency_phone = ?,
@@ -661,7 +659,7 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
     query += ' ORDER BY measurement_date DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const [metrics] = await db.execute(query, params);
+    const metrics = await db.query(query, params);
     res.json(metrics);
   } catch (error) {
     console.error('Get health metrics error:', error);
@@ -688,7 +686,7 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
     // ตรวจสอบว่าฐานข้อมูลมี column ใหม่หรือไม่
     let hasNewColumns = false;
     try {
-      await db.execute('SELECT uric_acid FROM health_metrics LIMIT 1');
+      await db.query('SELECT uric_acid FROM health_metrics LIMIT 1');
       hasNewColumns = true;
     } catch (error) {
       console.log('⚠️ New columns not found in database, using basic fields only');
@@ -759,7 +757,7 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
 
     console.log('📊 Sanitized health metrics data:', sanitizedData);
 
-    const [result] = await db.execute(query, sanitizedData);
+    const result = await db.query(query, sanitizedData);
 
     console.log('✅ Health metrics inserted with ID:', result.insertId);
 
@@ -801,7 +799,7 @@ app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
     query += ' ORDER BY record_date DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const [behaviors] = await db.execute(query, params);
+    const behaviors = await db.query(query, params);
     res.json(behaviors);
   } catch (error) {
     console.error('Get health behaviors error:', error);
@@ -864,7 +862,7 @@ app.post('/api/health-behaviors', authenticateToken, async (req, res) => {
 
     console.log('🏃 Sanitized health behavior data:', behaviorData);
 
-    const [result] = await db.execute(
+    const result = await db.query(
       `INSERT INTO health_behaviors 
        (user_id, record_date, smoking_status, cigarettes_per_day, alcohol_frequency, 
         alcohol_units_per_week, exercise_frequency, exercise_duration_minutes, 
@@ -900,7 +898,7 @@ app.get('/api/health-records', authenticateToken, async (req, res) => {
     const { limit = 10 } = req.query;
     
     // Get recent health metrics
-    const [metrics] = await db.execute(
+    const metrics = await db.query(
       `SELECT 'metric' as record_type, metric_id as id, measurement_date as date, 
               systolic_bp, diastolic_bp, heart_rate, blood_sugar_mg, notes,
               'Health Measurement' as category
@@ -912,7 +910,7 @@ app.get('/api/health-records', authenticateToken, async (req, res) => {
     );
 
     // Get recent health behaviors
-    const [behaviors] = await db.execute(
+    const behaviors = await db.query(
       `SELECT 'behavior' as record_type, behavior_id as id, record_date as date,
               exercise_duration_minutes, sleep_hours_per_night, stress_level, notes,
               'Lifestyle Record' as category
@@ -942,7 +940,7 @@ app.get('/api/health-records', authenticateToken, async (req, res) => {
 // Get health summary
 app.get('/api/health-summary', authenticateToken, async (req, res) => {
   try {
-    const [summary] = await db.execute(
+    const summary = await db.query(
       'SELECT * FROM health_summary WHERE user_id = ?',
       [req.user.userId]
     );
@@ -1026,7 +1024,7 @@ app.post('/api/health-assessment', authenticateToken, async (req, res) => {
     console.log('📋 Health Assessment Data received for user:', userId);
 
     // Create health assessment record
-    const [result] = await db.execute(`
+    const result = await db.query(`
       INSERT INTO health_assessments (
         user_id,
         smoking_status, smoking_years, smoking_pack_per_day, smoking_quit_attempts,
@@ -1115,7 +1113,7 @@ app.get('/api/health-assessment', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const [assessments] = await db.execute(`
+    const assessments = await db.query(`
       SELECT * FROM health_assessments 
       WHERE user_id = ? 
       ORDER BY created_at DESC 
@@ -1170,13 +1168,13 @@ app.get('/api/health-assessment', authenticateToken, async (req, res) => {
 app.get('/api/current-bmi', authenticateToken, async (req, res) => {
   try {
     // Get latest weight from health metrics
-    const [latestMetric] = await db.execute(
+    const latestMetric = await db.query(
       'SELECT weight_kg FROM health_metrics WHERE user_id = ? AND weight_kg IS NOT NULL ORDER BY measurement_date DESC LIMIT 1',
       [req.user.userId]
     );
 
     // Get profile data
-    const [profile] = await db.execute(
+    const profile = await db.query(
       'SELECT height_cm, weight_kg FROM user_profiles WHERE user_id = ?',
       [req.user.userId]
     );
@@ -1225,12 +1223,12 @@ app.get('/api/current-bmi', authenticateToken, async (req, res) => {
 // Get health risk assessment
 app.get('/api/risk-assessment', authenticateToken, async (req, res) => {
   try {
-    const [result] = await db.execute(
+    const result = await db.query(
       'CALL GetHealthRiskAssessment(?, @cardio_risk, @diabetes_risk, @recommendations)',
       [req.user.userId]
     );
 
-    const [riskResult] = await db.execute(
+    const riskResult = await db.query(
       'SELECT @cardio_risk as cardiovascular_risk, @diabetes_risk as diabetes_risk, @recommendations as recommendations'
     );
 
@@ -1256,7 +1254,7 @@ app.get('/api/health-trends', authenticateToken, async (req, res) => {
     }
 
     // Get health metrics trends
-    const [metricsTrends] = await db.execute(
+    const metricsTrends = await db.query(
       `SELECT measurement_date, 
               AVG(systolic_bp) as avg_systolic_bp, 
               AVG(diastolic_bp) as avg_diastolic_bp, 
@@ -1277,7 +1275,7 @@ app.get('/api/health-trends', authenticateToken, async (req, res) => {
     );
 
     // Get health behaviors trends
-    const [behaviorsTrends] = await db.execute(
+    const behaviorsTrends = await db.query(
       `SELECT record_date, 
               AVG(cigarettes_per_day) as avg_cigarettes_per_day, 
               AVG(alcohol_units_per_week) as avg_alcohol_units_per_week, 
@@ -1405,7 +1403,7 @@ app.post('/api/health-analytics/export-anonymous', authenticateToken, async (req
     const { purpose, dataTypes } = req.body;
     
     // Check user consent for data sharing
-    const [consent] = await db.execute(
+    const consent = await db.query(
       'SELECT allow_research_data FROM user_profiles WHERE user_id = ?',
       [userId]
     );
@@ -1421,7 +1419,7 @@ app.post('/api/health-analytics/export-anonymous', authenticateToken, async (req
     const anonymizedData = await generateAnonymizedExport(userId, dataTypes);
     
     // Log the export for audit trail
-    await db.execute(
+    await db.query(
       'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
       [userId, 'data_export', JSON.stringify({ purpose, dataTypes, timestamp: new Date() })]
     );
