@@ -2061,6 +2061,19 @@ startServer().catch((error) => {
   process.exit(1);
 });
 
+// Explicit asset handler BEFORE SPA fallback to avoid serving index.html for assets
+app.get(/\.(js|css|map|png|jpg|jpeg|gif|svg|ico|webp)$/i, (req, res, next) => {
+  const base = globalDistPath || path.join(process.cwd(), '..', 'dist');
+  const filePath = path.join(base, req.path.replace(/^\//, ''));
+  console.log('📦 Serving asset:', req.path, '→', filePath);
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.warn('⚠️ Asset not found, passing to next:', req.path, err.message);
+      next();
+    }
+  });
+});
+
 // SPA catch-all AFTER static middleware (skip asset-like paths)
 app.get(/^(?!\/api\/).*/, (req, res, next) => {
   // If request looks like a static asset (has an extension), let 404/static handle it
