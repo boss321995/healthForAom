@@ -1489,6 +1489,157 @@ function trackActivity(req, res, next) {
   next();
 }
 
+// ===============================
+// 🗄️ Database Migration Routes (Development/Setup Only)
+// ===============================
+
+app.post('/api/setup/migrate', async (req, res) => {
+  try {
+    console.log('🗄️ Starting database migration...');
+    
+    // Migration SQL
+    const migrationSQL = `
+      CREATE TABLE IF NOT EXISTS users (
+          user_id SERIAL PRIMARY KEY,
+          username VARCHAR(50) UNIQUE NOT NULL,
+          email VARCHAR(100) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS user_profiles (
+          profile_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          full_name VARCHAR(100),
+          date_of_birth DATE,
+          gender VARCHAR(10),
+          blood_group VARCHAR(5),
+          height_cm DECIMAL(5,2),
+          weight_kg DECIMAL(5,2),
+          phone VARCHAR(20),
+          emergency_contact VARCHAR(100),
+          medical_conditions TEXT,
+          medications TEXT,
+          allergies TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS health_metrics (
+          metric_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          weight_kg DECIMAL(5,2),
+          height_cm DECIMAL(5,2),
+          bmi DECIMAL(4,2),
+          body_fat_percentage DECIMAL(4,2),
+          blood_pressure_systolic INTEGER,
+          blood_pressure_diastolic INTEGER,
+          heart_rate_bpm INTEGER,
+          body_temperature_celsius DECIMAL(4,2),
+          blood_sugar_mg DECIMAL(6,2),
+          uric_acid DECIMAL(4,2),
+          alt DECIMAL(6,2),
+          ast DECIMAL(6,2),
+          hemoglobin DECIMAL(4,2),
+          hematocrit DECIMAL(4,2),
+          iron DECIMAL(6,2),
+          tibc DECIMAL(6,2),
+          oxygen_saturation DECIMAL(4,2),
+          steps_count INTEGER,
+          sleep_hours DECIMAL(4,2),
+          stress_level INTEGER,
+          energy_level INTEGER,
+          mood_score INTEGER,
+          measurement_date DATE NOT NULL,
+          notes TEXT,
+          recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS health_behavior (
+          behavior_id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          exercise_minutes INTEGER DEFAULT 0,
+          exercise_type VARCHAR(100),
+          activity_level VARCHAR(20) DEFAULT 'sedentary',
+          calories_consumed INTEGER,
+          water_intake_ml INTEGER DEFAULT 0,
+          alcohol_units DECIMAL(4,2) DEFAULT 0,
+          smoking_cigarettes INTEGER DEFAULT 0,
+          sleep_hours DECIMAL(4,2),
+          sleep_quality VARCHAR(20),
+          stress_level INTEGER,
+          mood VARCHAR(20),
+          screen_time_hours DECIMAL(4,2),
+          meditation_minutes INTEGER DEFAULT 0,
+          social_interaction_hours DECIMAL(4,2),
+          behavior_date DATE NOT NULL,
+          notes TEXT,
+          recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, measurement_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_health_behavior_user_date ON health_behavior(user_id, behavior_date DESC);
+    `;
+
+    // Execute migration
+    await db.query(migrationSQL);
+    
+    // Verify tables were created
+    const tablesResult = await db.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `);
+    
+    console.log('✅ Database migration completed successfully');
+    
+    res.status(200).json({
+      success: true,
+      message: 'Database migration completed successfully',
+      tables_created: tablesResult.rows.map(row => row.table_name),
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Check database tables
+app.get('/api/setup/tables', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `);
+    
+    res.status(200).json({
+      tables: result.rows,
+      total_tables: result.rows.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Apply activity tracking to all routes
 app.use(trackActivity);
 
