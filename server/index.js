@@ -80,34 +80,6 @@ async function handleDatabaseError(error, operation = 'unknown') {
   throw error;
 }
 
-// Database query wrapper with retry logic for PostgreSQL
-async function executeQuery(query, params = []) {
-  const maxRetries = 3;
-  let lastError;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await db.query(query, params);
-      return result;
-    } catch (error) {
-      lastError = error;
-      console.error(`❌ Query attempt ${attempt} failed:`, error.message);
-      
-      if (attempt < maxRetries && 
-          (error.code === 'ECONNRESET' || 
-           error.code === 'ETIMEDOUT' ||
-           error.code === 'ENOTFOUND')) {
-        
-        console.log(`⏳ Retrying query in ${attempt * 1000}ms...`);
-        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-        await handleDatabaseError(error, 'query retry');
-      }
-    }
-  }
-  
-  throw lastError;
-}
-
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'health_app_secret_key';
 
@@ -214,7 +186,7 @@ app.get('/api/health', async (req, res) => {
     // Test database connection if available
     if (db) {
       try {
-        await executeQuery('SELECT 1 as health_check');
+        await db.query('SELECT 1 as health_check');
         dbStatus = 'connected';
       } catch (error) {
         console.error('Database health check failed:', error.message);
@@ -280,12 +252,12 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // Check if user exists
-    const [existingUsers] = await executeQuery(
-      'SELECT user_id FROM users WHERE username = ? OR email = ?',
+    const existingUsers = await db.query(
+      'SELECT user_id FROM users WHERE username = $1 OR email = $2',
       [username, email]
     );
 
-    if (existingUsers.length > 0) {
+    if (existingUsers.rows.length > 0) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
 
@@ -294,22 +266,21 @@ app.post('/api/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Insert user
-    const [result] = await executeQuery(
-      'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+    const result = await db.query(
+      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING user_id',
       [username, email, passwordHash]
     );
 
-    const userId = result.insertId;
+    const userId = result.rows[0].user_id;
 
     // Insert profile data if provided
     if (profile) {
       try {
-        await executeQuery(
+        await db.query(
           `INSERT INTO user_profiles (
             user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
-            phone, emergency_contact, medical_conditions, medications, allergies, 
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+            phone, emergency_contact, medical_conditions, medications, allergies
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             userId,
             profile.full_name || null,
