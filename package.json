@@ -7,6 +7,8 @@
   "scripts": {
     "start": "webpack serve --mode development",
     "build": "webpack --mode production",
+    "build:server": "npm run build && npm run copy:dist",
+    "copy:dist": "cp -r dist server/dist || xcopy dist server\\dist\\ /E /I /Y",
     "server": "node server/index.js",
     "dev": "concurrently \"npm run server\" \"npm start\"",
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -14,7 +16,7 @@
     "deploy:netlify": "npm run build && netlify deploy --prod --dir=dist",
     "deploy:surge": "npm run build && surge dist",
     "deploy:gh-pages": "npm run build && gh-pages -d dist",
-    "predeploy": "npm run build"
+    "predeploy": "npm run build:server"
   },
   "keywords": [],
   "author": "",

@@ -117,9 +117,88 @@ const authenticateToken = (req, res, next) => {
 // Serve static files from dist folder
 app.use(express.static('dist'));
 
-// Root route - Serve frontend app
+// Root route - Serve frontend app or fallback
 app.get('/', (req, res) => {
-  res.sendFile('index.html', { root: 'dist' });
+  try {
+    // Try to serve index.html from dist folder
+    res.sendFile('index.html', { root: 'dist' });
+  } catch (error) {
+    console.log('⚠️ dist/index.html not found, serving fallback HTML');
+    // Fallback HTML if dist files are not available
+    const fallbackHTML = `
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Health Management System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .container {
+            max-width: 600px;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        h1 { font-size: 3em; margin-bottom: 20px; }
+        .status { 
+            background: rgba(40, 167, 69, 0.8);
+            padding: 10px 20px;
+            border-radius: 50px;
+            display: inline-block;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .button {
+            background: rgba(40, 167, 69, 0.8);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            font-size: 1em;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s;
+        }
+        .button:hover {
+            background: rgba(40, 167, 69, 1);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 Health Management System</h1>
+        <div class="status">✅ API Service Running</div>
+        <p>ระบบจัดการสุขภาพ - API Backend เปิดใช้งานแล้ว</p>
+        <br>
+        <a href="/api" class="button">📋 API Documentation</a>
+        <a href="/api/health" class="button">💚 Health Check</a>
+        <br><br>
+        <p style="opacity: 0.8; font-size: 0.9em;">
+            Frontend application deployment in progress...<br>
+            กำลังติดตั้งระบบหน้าบ้าน...
+        </p>
+    </div>
+</body>
+</html>`;
+    res.send(fallbackHTML);
+  }
 });
 
 // API Info route
@@ -483,7 +562,122 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
 });
 
 // ===============================
-// 📊 Health Metrics Routes
+// � User Profile Routes
+// ===============================
+
+// Get user profile
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 Getting profile for user:', req.user.userId);
+    
+    // Get user basic info
+    const userResult = await db.query(
+      'SELECT id, username, email, created_at FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Get user profile details
+    const profileResult = await db.query(
+      'SELECT * FROM user_profiles WHERE user_id = $1',
+      [req.user.userId]
+    );
+    
+    const profile = profileResult.rows.length > 0 ? profileResult.rows[0] : null;
+    
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        created_at: user.created_at
+      },
+      profile: profile
+    });
+  } catch (error) {
+    console.error('❌ Get profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user profile
+app.put('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    console.log('📝 Updating profile for user:', req.user.userId);
+    console.log('📊 Profile data:', req.body);
+    
+    const {
+      full_name, date_of_birth, gender, blood_group,
+      height_cm, weight_kg, phone, emergency_contact, emergency_phone,
+      medical_conditions, medications, allergies
+    } = req.body;
+
+    // Sanitize data
+    const sanitizedData = {
+      full_name: full_name?.trim() || null,
+      date_of_birth: date_of_birth || null,
+      gender: gender?.trim() || null,
+      blood_group: blood_group?.trim() || null,
+      height_cm: height_cm ? parseFloat(height_cm) : null,
+      weight_kg: weight_kg ? parseFloat(weight_kg) : null,
+      phone: phone?.trim() || null,
+      emergency_contact: emergency_contact?.trim() || null,
+      emergency_phone: emergency_phone?.trim() || null,
+      medical_conditions: medical_conditions?.trim() || null,
+      medications: medications?.trim() || null,
+      allergies: allergies?.trim() || null
+    };
+
+    // Check if profile exists
+    const existingProfile = await db.query(
+      'SELECT id FROM user_profiles WHERE user_id = $1',
+      [req.user.userId]
+    );
+
+    if (existingProfile.rows.length === 0) {
+      // Create new profile
+      await db.query(
+        `INSERT INTO user_profiles 
+         (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+          phone, emergency_contact, emergency_phone, medical_conditions, medications, allergies) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
+         sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
+         sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
+         sanitizedData.emergency_phone, sanitizedData.medical_conditions, 
+         sanitizedData.medications, sanitizedData.allergies]
+      );
+      console.log('✅ New profile created for user:', req.user.userId);
+    } else {
+      // Update existing profile
+      await db.query(
+        `UPDATE user_profiles SET 
+         full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
+         height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
+         medical_conditions = $10, medications = $11, allergies = $12, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $13`,
+        [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
+         sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
+         sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
+         sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies, req.user.userId]
+      );
+      console.log('✅ Profile updated for user:', req.user.userId);
+    }
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('❌ Update profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===============================
+// �📊 Health Metrics Routes
 // ===============================
 
 // Get health metrics
