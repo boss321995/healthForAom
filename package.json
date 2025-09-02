@@ -11,7 +11,7 @@
     "build": "webpack --mode production",
     "build:server": "npm run build && npm run copy:dist",
     "copy:dist": "node copy-dist.js",
-    "postinstall": "echo 'Running postinstall...' && npm run build && npm run copy:dist && echo 'Postinstall completed!'",
+    "postinstall": "echo '🚀 Starting postinstall process...' && echo '📁 Current directory:' && pwd && echo '📂 Directory contents:' && ls -la && npm run build && npm run copy:dist && echo '✅ Postinstall completed successfully!'",
     "server": "node server/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "deploy:vercel": "npm run build && vercel --prod",

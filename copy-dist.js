@@ -3,6 +3,25 @@ const path = require('path');
 
 function copyDirectory(source, destination) {
   try {
+    console.log('🔧 Copy process starting...');
+    console.log('📁 Source:', path.resolve(source));
+    console.log('📁 Destination:', path.resolve(destination));
+    console.log('📁 Current working directory:', process.cwd());
+    
+    // Check if source exists
+    if (!fs.existsSync(source)) {
+      console.error('❌ Source directory does not exist:', source);
+      const rootDist = path.join(process.cwd(), 'dist');
+      console.log('🔍 Checking root dist at:', rootDist);
+      if (fs.existsSync(rootDist)) {
+        console.log('✅ Found dist in root, using that instead');
+        source = rootDist;
+      } else {
+        console.error('❌ No dist folder found anywhere');
+        return false;
+      }
+    }
+
     // Create destination directory if it doesn't exist
     if (!fs.existsSync(destination)) {
       fs.mkdirSync(destination, { recursive: true });
@@ -11,7 +30,7 @@ function copyDirectory(source, destination) {
 
     // Read source directory
     const files = fs.readdirSync(source);
-    console.log('📂 Found files in dist:', files);
+    console.log('📂 Found files in source:', files);
 
     // Copy each file
     files.forEach(file => {
@@ -26,14 +45,43 @@ function copyDirectory(source, destination) {
       }
     });
 
-    console.log('🎉 Successfully copied dist files to server/dist');
+    console.log('🎉 Successfully copied dist files to', destination);
     return true;
   } catch (error) {
     console.error('❌ Error copying files:', error.message);
+    console.error('❌ Stack:', error.stack);
     return false;
   }
 }
 
-// Copy dist to server/dist
-const success = copyDirectory('./dist', './server/dist');
-process.exit(success ? 0 : 1);
+// Try multiple possible source locations
+const possibleSources = [
+  './dist',
+  '../dist', 
+  path.join(process.cwd(), 'dist'),
+  path.join(__dirname, 'dist')
+];
+
+console.log('🚀 Starting copy-dist process...');
+console.log('📁 Working directory:', process.cwd());
+console.log('📁 Script directory:', __dirname);
+
+let success = false;
+for (const source of possibleSources) {
+  console.log(`🔍 Trying source: ${source}`);
+  if (fs.existsSync(source)) {
+    console.log(`✅ Found dist at: ${source}`);
+    success = copyDirectory(source, './server/dist');
+    if (success) break;
+  } else {
+    console.log(`❌ Not found: ${source}`);
+  }
+}
+
+if (!success) {
+  console.error('❌ Failed to copy dist files from any location');
+  process.exit(1);
+} else {
+  console.log('🎉 Copy process completed successfully!');
+  process.exit(0);
+}
