@@ -52,20 +52,15 @@ class HealthAnalytics {
     const query = `
       SELECT 
         measurement_date,
-        systolic_bp,
-        diastolic_bp,
-        heart_rate,
+        blood_pressure_systolic as systolic_bp,
+        blood_pressure_diastolic as diastolic_bp,
+        heart_rate_bpm as heart_rate,
         blood_sugar_mg,
-        cholesterol_total,
-        cholesterol_hdl,
-        cholesterol_ldl,
-        triglycerides,
-        hba1c,
         body_fat_percentage,
-        muscle_mass_kg,
-        created_at
+        weight_kg,
+        recorded_at
       FROM health_metrics 
-      WHERE user_id = ? AND measurement_date >= ?
+      WHERE user_id = $1 AND measurement_date >= $2
       ORDER BY measurement_date ASC
     `;
     
@@ -79,21 +74,17 @@ class HealthAnalytics {
     
     const query = `
       SELECT 
-        record_date,
-        exercise_frequency,
-        exercise_duration_minutes,
-        smoking_status,
-        cigarettes_per_day,
-        alcohol_frequency,
-        alcohol_units_per_week,
-        sleep_hours_per_night,
+        behavior_date as record_date,
+        exercise_minutes as exercise_duration_minutes,
+        smoking_cigarettes as cigarettes_per_day,
+        alcohol_units as alcohol_units_per_week,
+        sleep_hours as sleep_hours_per_night,
         stress_level,
-        diet_quality,
-        water_intake_liters,
-        created_at
-      FROM health_behaviors 
-      WHERE user_id = ? AND record_date >= ?
-      ORDER BY record_date ASC
+        water_intake_ml,
+        recorded_at
+      FROM health_behavior 
+      WHERE user_id = $1 AND behavior_date >= $2
+      ORDER BY behavior_date ASC
     `;
     
     const result = await this.db.query(query, [userId, timeCondition]);
