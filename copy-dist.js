@@ -58,8 +58,17 @@ function copyDirectory(source, destination) {
 const possibleSources = [
   './dist',
   '../dist', 
+  '../../dist',  // For Render: /opt/render/project/src/server -> /opt/render/project/src/dist
   path.join(process.cwd(), 'dist'),
-  path.join(__dirname, 'dist')
+  path.join(process.cwd(), '../dist'),
+  path.join(__dirname, 'dist'),
+  path.join(__dirname, '../dist')
+];
+
+const possibleDestinations = [
+  './server/dist',
+  './dist',  // If we're already in server directory
+  path.join(__dirname, 'dist')  // Server directory dist
 ];
 
 console.log('🚀 Starting copy-dist process...');
@@ -71,7 +80,21 @@ for (const source of possibleSources) {
   console.log(`🔍 Trying source: ${source}`);
   if (fs.existsSync(source)) {
     console.log(`✅ Found dist at: ${source}`);
-    success = copyDirectory(source, './server/dist');
+    
+    // Try different destination paths
+    for (const dest of possibleDestinations) {
+      try {
+        console.log(`📁 Trying destination: ${dest}`);
+        success = copyDirectory(source, dest);
+        if (success) {
+          console.log(`🎉 Successfully copied to: ${dest}`);
+          break;
+        }
+      } catch (err) {
+        console.log(`❌ Failed to copy to ${dest}:`, err.message);
+      }
+    }
+    
     if (success) break;
   } else {
     console.log(`❌ Not found: ${source}`);
