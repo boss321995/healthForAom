@@ -114,29 +114,12 @@ const authenticateToken = (req, res, next) => {
 // � Root & Welcome Routes
 // ===============================
 
-// Root route - Redirect to frontend
+// Serve static files from dist folder
+app.use(express.static('dist'));
+
+// Root route - Serve frontend app
 app.get('/', (req, res) => {
-  // Check if this is API request or browser request
-  const userAgent = req.headers['user-agent'] || '';
-  const acceptHeader = req.headers['accept'] || '';
-  
-  // If it's a browser request, redirect to frontend
-  if (userAgent.includes('Mozilla') || acceptHeader.includes('text/html')) {
-    return res.redirect('https://boss321995.github.io/healthForAom/');
-  }
-  
-  // If it's an API request, return JSON
-  res.json({
-    message: '🏥 Health Management API',
-    status: 'active',
-    version: '1.0.0',
-    endpoints: {
-      auth: '/api/auth/*',
-      users: '/api/users/*', 
-      health: '/api/health/*'
-    },
-    frontend: 'https://boss321995.github.io/healthForAom/'
-  });
+  res.sendFile('index.html', { root: 'dist' });
 });
 
 // API Info route
