@@ -3,8 +3,10 @@ services:
     name: health-management-api
     env: node
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
+    rootDir: server
+    buildCommand: |
+      cd .. && npm install && npm run build && cd server && npm install
+    startCommand: node index.js
     envVars:
       - key: NODE_ENV
         value: production

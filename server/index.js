@@ -120,13 +120,13 @@ const authenticateToken = (req, res, next) => {
 // � Root & Welcome Routes
 // ===============================
 
-// Serve static files from dist folder
-const distPath = path.join(__dirname, 'dist');
+// Serve static files from dist folder  
+const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 
 // Root route - Serve frontend app
 app.get('/', (req, res) => {
-  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
   
   console.log('🔍 Looking for React app at:', indexPath);
   console.log('📁 __dirname is:', __dirname);
@@ -1931,6 +1931,28 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// Catch-all route for React SPA - must be LAST
+app.get('*', (req, res) => {
+  const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+  
+  // Check if request is for API
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  
+  console.log('🔄 Serving React app for:', req.path);
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('❌ Error serving React app:', err);
+      res.status(500).send(`
+        <h1>Frontend Not Available</h1>
+        <p>Could not load React app from: ${indexPath}</p>
+        <p>Error: ${err.message}</p>
+      `);
+    }
+  });
+});
+
 // Start server with enhanced error handling
 async function startServer() {
   try {
@@ -1977,7 +1999,29 @@ async function startServer() {
   }
 }
 
+// Try to build frontend if not exists
+async function ensureFrontendBuilt() {
+  const distPath = path.join(__dirname, '..', 'dist');
+  const indexPath = path.join(distPath, 'index.html');
+  
+  console.log('🔍 Checking for frontend files...');
+  console.log('📁 Looking in:', distPath);
+  
+  if (!fs.existsSync(indexPath)) {
+    console.log('⚠️ Frontend not found, attempting to build...');
+    console.log('❌ Frontend files missing - please run "npm run build" first');
+  } else {
+    console.log('✅ Frontend files already exist');
+    const files = fs.readdirSync(distPath);
+    console.log('📂 Frontend files found:', files.slice(0, 5).join(', '));
+  }
+}
+
 console.log('🎯 Health Management API - Starting...');
+
+// Ensure frontend is built before starting
+await ensureFrontendBuilt();
+
 startServer().catch((error) => {
   console.error('💀 Critical startup error:', error);
   process.exit(1);
