@@ -1,6 +1,6 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
-// import { getHealthRecommendations } from '../src/utils/gemini.js';
+// Note: Database connection will be passed from main server
+// No direct database import needed
 
 // Health Analytics API for AI Trend Analysis
 class HealthAnalytics {
@@ -69,8 +69,8 @@ class HealthAnalytics {
       ORDER BY measurement_date ASC
     `;
     
-    const [rows] = await this.db.execute(query, [userId, timeCondition]);
-    return rows;
+    const result = await this.db.query(query, [userId, timeCondition]);
+    return result.rows;
   }
 
   // ดึงข้อมูลพฤติกรรมย้อนหลัง
@@ -96,8 +96,8 @@ class HealthAnalytics {
       ORDER BY record_date ASC
     `;
     
-    const [rows] = await this.db.execute(query, [userId, timeCondition]);
-    return rows;
+    const result = await this.db.query(query, [userId, timeCondition]);
+    return result.rows;
   }
 
   // วิเคราะห์แนวโน้ม BMI
