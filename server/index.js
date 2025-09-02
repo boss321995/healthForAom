@@ -127,14 +127,40 @@ app.use(express.static(distPath));
 app.get('/', (req, res) => {
   const indexPath = path.join(__dirname, 'dist', 'index.html');
   
+  console.log('🔍 Looking for React app at:', indexPath);
+  
   // Try to serve React app first
   res.sendFile(indexPath, (err) => {
     if (err) {
-      console.log('⚠️ React app not found, redirecting to GitHub Pages');
+      console.log('⚠️ React app not found at:', indexPath);
+      console.log('🔄 Redirecting to GitHub Pages');
       // If React app files are not available, redirect to GitHub Pages
       res.redirect('https://boss321995.github.io/healthForAom/');
+    } else {
+      console.log('✅ Successfully serving React app');
     }
   });
+});
+
+// Debug route to check files
+app.get('/debug/files', (req, res) => {
+  const fs = require('fs');
+  const distPath = path.join(__dirname, 'dist');
+  
+  try {
+    const files = fs.readdirSync(distPath);
+    res.json({
+      distPath: distPath,
+      files: files,
+      indexExists: fs.existsSync(path.join(distPath, 'index.html'))
+    });
+  } catch (error) {
+    res.json({
+      distPath: distPath,
+      error: error.message,
+      distExists: fs.existsSync(distPath)
+    });
+  }
 });
 
 // API Info route
