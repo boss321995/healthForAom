@@ -116,46 +116,27 @@ const authenticateToken = (req, res, next) => {
 
 // Root route - Redirect to frontend
 app.get('/', (req, res) => {
-  // Check if request is from browser (HTML request)
-  const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+  // Check if this is API request or browser request
+  const userAgent = req.headers['user-agent'] || '';
+  const acceptHeader = req.headers['accept'] || '';
   
-  if (acceptsHtml) {
-    // Redirect to frontend URL (will update after deployment)
-    const frontendUrl = process.env.FRONTEND_URL || 'https://healthhub-management.netlify.app';
-    res.redirect(frontendUrl);
-  } else {
-    // Return JSON for API clients
-    res.status(200).json({
-      message: '🏥 Health Management API',
-      version: '1.0.0',
-      status: 'running',
-      timestamp: new Date().toISOString(),
-      frontend_url: process.env.FRONTEND_URL || 'https://healthhub-management.netlify.app',
-      api_documentation: '/api',
-      health_check: '/api/health',
-      endpoints: {
-        health: '/api/health',
-        ping: '/api/ping',
-        auth: {
-          register: 'POST /api/auth/register',
-          login: 'POST /api/auth/login'
-        },
-        users: {
-          profile: 'GET /api/users/profile',
-          updateProfile: 'PUT /api/users/profile'
-        },
-        health_data: {
-          metrics: 'GET/POST /api/health/metrics',
-          behavior: 'GET/POST /api/health/behavior',
-          analysis: 'POST /api/health/analysis'
-        },
-        setup: {
-          migrate: 'POST /api/setup/migrate',
-          tables: 'GET /api/setup/tables'
-        }
-      }
-    });
+  // If it's a browser request, redirect to frontend
+  if (userAgent.includes('Mozilla') || acceptHeader.includes('text/html')) {
+    return res.redirect('https://boss321995.github.io/healthForAom/');
   }
+  
+  // If it's an API request, return JSON
+  res.json({
+    message: '🏥 Health Management API',
+    status: 'active',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth/*',
+      users: '/api/users/*', 
+      health: '/api/health/*'
+    },
+    frontend: 'https://boss321995.github.io/healthForAom/'
+  });
 });
 
 // API Info route

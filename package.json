@@ -1,7 +1,8 @@
 {
   "name": "health",
   "version": "1.0.0",
-  "description": "",
+  "description": "HealthHub - Complete Health Management System",
+  "homepage": "https://boss321995.github.io/healthForAom",
   "main": "index.js",
   "scripts": {
     "start": "webpack serve --mode development",
@@ -11,7 +12,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "deploy:vercel": "npm run build && vercel --prod",
     "deploy:netlify": "npm run build && netlify deploy --prod --dir=dist",
-    "deploy:surge": "npm run build && surge dist"
+    "deploy:surge": "npm run build && surge dist",
+    "deploy:gh-pages": "npm run build && gh-pages -d dist",
+    "predeploy": "npm run build"
   },
   "keywords": [],
   "author": "",
@@ -42,6 +45,7 @@
     "babel-loader": "^10.0.0",
     "concurrently": "^7.6.0",
     "css-loader": "^7.1.2",
+    "gh-pages": "^6.3.0",
     "html-webpack-plugin": "^5.6.4",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.1.1",
