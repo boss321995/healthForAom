@@ -4,9 +4,9 @@
 import React from 'react';
 
 class ApiManager {
-  constructor(baseURL = 'https://health-management-api.onrender.com/api') {
+  constructor(baseURL = '/api') {
     // Use production API URL by default
-    this.baseURL = process.env.REACT_APP_API_URL || baseURL;
+  this.baseURL = process.env.REACT_APP_API_URL || baseURL;
     this.maxRetries = 3;
     this.retryDelay = 1000; // 1 second
     this.timeout = 30000; // 30 seconds

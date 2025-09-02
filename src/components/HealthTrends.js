@@ -51,7 +51,7 @@ export default function HealthTrends({ userId }) {
       try {
         const token = localStorage.getItem('healthToken');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch('http://localhost:5000/api/health-metrics?limit=30', { headers });
+  const res = await fetch('/api/health-metrics?limit=30', { headers });
         const data = await res.json();
         setMetrics(data.reverse()); // เรียงจากเก่าไปใหม่
       } catch (e) {

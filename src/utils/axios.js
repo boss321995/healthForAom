@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 // Create axios instance with base configuration
+// Prefer same-origin API in production; allow override via REACT_APP_API_URL
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'https://health-management-api.onrender.com',
+  baseURL: process.env.REACT_APP_API_URL || '/api',
   timeout: 30000, // Increased timeout for Render cold starts
 });
 

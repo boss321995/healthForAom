@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
           } else {
             // Real backend authentication check
             const headers = { Authorization: `Bearer ${token}` };
-            const response = await axios.get('http://localhost:5000/api/profile', { headers });
+            const response = await axios.get('/api/profile', { headers });
             setUser(response.data);
           }
         } catch (error) {
@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       // Try real backend first
-      const response = await axios.post('http://localhost:5000/api/auth/login', {
+  const response = await axios.post('/api/auth/login', {
         username,
         password
       });
@@ -109,7 +109,7 @@ export const AuthProvider = ({ children }) => {
       console.log('🚀 Attempting backend registration with:', { username, email, profileData });
       
       // Try real backend first
-      const response = await axios.post('http://localhost:5000/api/auth/register', {
+  const response = await axios.post('/api/auth/register', {
         username,
         email,
         password,

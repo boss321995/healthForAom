@@ -112,7 +112,7 @@ const PostRegistrationAssessment = ({ onComplete, onSkip }) => {
       if (token && !token.startsWith('mock-jwt-token-')) {
         // Send to real backend
         const headers = { Authorization: `Bearer ${token}` };
-        await axios.post('http://localhost:5000/api/health-assessment', formData, { headers });
+  await axios.post('/api/health-assessment', formData, { headers });
         console.log('✅ Health assessment saved to backend');
       } else {
         // Save to localStorage for mock

@@ -94,11 +94,11 @@ const Dashboard = () => {
       const headers = { Authorization: `Bearer ${token}` };
       
       // ดึงข้อมูล health metrics ล่าสุด
-      const metricsResponse = await axios.get('http://localhost:5000/api/health-metrics?limit=50', { headers });
+  const metricsResponse = await axios.get('/api/health-metrics?limit=50', { headers });
       const metrics = metricsResponse.data || [];
       
       // ดึงข้อมูล health behaviors ล่าสุด
-      const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
+  const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
       const behaviors = behaviorsResponse.data || [];
       
       // แปลงข้อมูล metrics เป็นรูปแบบประวัติ
@@ -180,7 +180,7 @@ const Dashboard = () => {
       
       // Fetch health summary
       try {
-        const summaryResponse = await axios.get('http://localhost:5000/api/health-summary', { headers });
+  const summaryResponse = await axios.get('/api/health-summary', { headers });
         setHealthSummary(summaryResponse.data);
         console.log('✅ Health summary loaded:', summaryResponse.data);
       } catch (error) {
@@ -199,7 +199,7 @@ const Dashboard = () => {
 
       // Fetch recent metrics
       try {
-        const metricsResponse = await axios.get('http://localhost:5000/api/health-metrics?limit=5', { headers });
+  const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
         setRecentMetrics(metricsResponse.data);
       } catch (error) {
         console.error('Error fetching health metrics:', error);
@@ -207,7 +207,7 @@ const Dashboard = () => {
 
       // Fetch user profile
       try {
-        const profileResponse = await axios.get('http://localhost:5000/api/profile', { headers });
+  const profileResponse = await axios.get('/api/profile', { headers });
         setUserProfile(profileResponse.data);
         console.log('✅ User profile loaded:', profileResponse.data);
       } catch (error) {
@@ -548,7 +548,7 @@ const Dashboard = () => {
       console.log('📤 Submitting health metrics:', metricsData);
       
       const headers = { Authorization: `Bearer ${token}` };
-      await axios.post('http://localhost:5000/api/health-metrics', metricsData, { headers });
+  await axios.post('/api/health-metrics', metricsData, { headers });
       
       console.log('✅ Health metrics submitted successfully');
       setSubmitMessage({ type: 'success', text: 'บันทึกข้อมูลสำเร็จ!' });
@@ -683,7 +683,7 @@ const Dashboard = () => {
 
       console.log('📤 Submitting lifestyle data:', lifestyleData);
 
-      const response = await axios.post('/api/health-behaviors', lifestyleData, {
+  const response = await axios.post('/api/health-behaviors', lifestyleData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

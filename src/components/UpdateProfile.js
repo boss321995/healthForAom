@@ -52,7 +52,7 @@ const UpdateProfile = () => {
       }
 
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get('http://localhost:5000/api/profile', { headers });
+  const response = await axios.get('/api/profile', { headers });
       
       if (response.data.profile_completed) {
         setProfileForm({
@@ -148,7 +148,7 @@ const UpdateProfile = () => {
 
       const headers = { Authorization: `Bearer ${token}` };
       
-      await axios.put('http://localhost:5000/api/profile', profileForm, { headers });
+  await axios.put('/api/profile', profileForm, { headers });
       
       setSubmitMessage({ type: 'success', text: 'อัปเดตโปรไฟล์สำเร็จ!' });
       

@@ -225,9 +225,9 @@ const HealthAnalytics = ({
       const headers = { Authorization: `Bearer ${token}` };
 
       const [trendsRes, predictionsRes, insightsRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/health-analytics/trends/${selectedTimeRange}`, { headers }),
-        axios.get('http://localhost:5000/api/health-analytics/predictions', { headers }),
-        axios.get('http://localhost:5000/api/health-analytics/insights', { headers })
+  axios.get(`/api/health-analytics/trends/${selectedTimeRange}`, { headers }),
+  axios.get('/api/health-analytics/predictions', { headers }),
+  axios.get('/api/health-analytics/insights', { headers })
       ]);
 
       console.log('✅ HealthAnalytics API responses:');
