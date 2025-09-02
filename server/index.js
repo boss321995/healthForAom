@@ -123,118 +123,18 @@ const authenticateToken = (req, res, next) => {
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
-// Root route - Serve frontend app or fallback
+// Root route - Serve frontend app
 app.get('/', (req, res) => {
-  // Always serve fallback HTML for now to avoid file path issues
-  console.log('🏠 Serving fallback HTML page');
-  const fallbackHTML = `
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🏥 Health Management System</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        .container {
-            max-width: 800px;
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-        }
-        h1 { font-size: 3em; margin-bottom: 20px; }
-        .status { 
-            background: rgba(40, 167, 69, 0.8);
-            padding: 10px 20px;
-            border-radius: 50px;
-            display: inline-block;
-            margin: 20px 0;
-            font-weight: bold;
-        }
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .feature-card {
-            background: rgba(255,255,255,0.1);
-            padding: 20px;
-            border-radius: 15px;
-            backdrop-filter: blur(5px);
-        }
-        .button {
-            background: rgba(40, 167, 69, 0.8);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 25px;
-            cursor: pointer;
-            margin: 10px;
-            font-size: 1em;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.3s;
-        }
-        .button:hover {
-            background: rgba(40, 167, 69, 1);
-            transform: translateY(-2px);
-        }
-        .api-button {
-            background: rgba(0, 123, 255, 0.8);
-        }
-        .api-button:hover {
-            background: rgba(0, 123, 255, 1);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🏥 Health Management System</h1>
-        <div class="status">✅ API Service Running</div>
-        
-        <div class="feature-grid">
-            <div class="feature-card">
-                <h3>👤 User Management</h3>
-                <p>สมัครสมาชิก เข้าสู่ระบบ จัดการโปรไฟล์</p>
-            </div>
-            <div class="feature-card">
-                <h3>📊 Health Tracking</h3>
-                <p>บันทึกข้อมูลสุขภาพ ติดตามค่าต่างๆ</p>
-            </div>
-            <div class="feature-card">
-                <h3>🔍 Analytics</h3>
-                <p>วิเคราะห์ข้อมูล รายงานสุขภาพ AI</p>
-            </div>
-        </div>
-        
-        <p style="margin: 20px 0;">🎯 <strong>ระบบพร้อมใช้งานเต็มรูปแบบ</strong></p>
-        
-        <a href="/api" class="button api-button">📋 API Documentation</a>
-        <a href="/api/health" class="button">💚 Health Check</a>
-        
-        <div style="margin-top: 30px; opacity: 0.8; font-size: 0.9em;">
-            <p>🏥 Complete Health Management System</p>
-            <p>PostgreSQL Database • JWT Authentication • AI Analytics</p>
-            <p>Ready for production use • ${new Date().toLocaleString('th-TH')}</p>
-        </div>
-    </div>
-</body>
-</html>`;
-  res.send(fallbackHTML);
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  
+  // Try to serve React app first
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.log('⚠️ React app not found, redirecting to GitHub Pages');
+      // If React app files are not available, redirect to GitHub Pages
+      res.redirect('https://boss321995.github.io/healthForAom/');
+    }
+  });
 });
 
 // API Info route
