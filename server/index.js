@@ -1881,21 +1881,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Handle 404 - Route not found
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    message: `Cannot ${req.method} ${req.path}`,
-    timestamp: new Date().toISOString(),
-    available_routes: [
-      'GET /',
-      'GET /api',
-      'GET /api/health',
-      'POST /api/auth/register',
-      'POST /api/auth/login'
-    ]
-  });
-});
+// (moved) 404 handler will be registered at the end, after static and SPA routes
 
 // ===============================
 // 🛑 Server Shutdown Handling (For Production)
@@ -2098,4 +2084,24 @@ if (foundDistPath) {
 startServer().catch((error) => {
   console.error('💀 Critical startup error:', error);
   process.exit(1);
+});
+
+// Final 404 handler - after all routes and static middleware
+app.use((req, res) => {
+  // If the request looks like a static asset under dist but failed, show plain 404
+  if (req.path.match(/^\/(bundle|\d+\.bundle|assets|static)\./)) {
+    return res.status(404).send('Not Found');
+  }
+  res.status(404).json({
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.path}`,
+    timestamp: new Date().toISOString(),
+    available_routes: [
+      'GET /',
+      'GET /api',
+      'GET /api/health',
+      'POST /api/auth/register',
+      'POST /api/auth/login'
+    ]
+  });
 });
