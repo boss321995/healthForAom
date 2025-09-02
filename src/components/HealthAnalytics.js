@@ -2,6 +2,84 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
+// ฟังก์ชันดึงค่าล่าสุดที่ไม่เป็น null สำหรับค่าใดค่าหนึ่ง
+const getLatestValidValue = (metrics, fieldName) => {
+  if (!metrics || metrics.length === 0) return null;
+  
+  // เรียงจากวันที่ล่าสุดก่อน และหาค่าที่ไม่เป็น null/undefined/0
+  const sortedMetrics = [...metrics].sort((a, b) => 
+    new Date(b.measurement_date) - new Date(a.measurement_date)
+  );
+  
+  for (const metric of sortedMetrics) {
+    const value = metric[fieldName];
+    if (value !== null && value !== undefined && value !== 0 && value !== '') {
+      return value;
+    }
+  }
+  return null;
+};
+
+// เพิ่มฟังก์ชันการวิเคราะห์ค่าตรวจใหม่
+const getUricAcidStatus = (value) => {
+  if (!value) return { status: 'ไม่มีข้อมูล', color: 'text-gray-400', emoji: '❓' };
+  if (value < 2.5) return { status: 'ต่ำ', color: 'text-blue-600', emoji: '🔵' };
+  if (value <= 6.0) return { status: 'ปกติ', color: 'text-green-600', emoji: '✅' };
+  if (value <= 7.0) return { status: 'สูงเล็กน้อย', color: 'text-yellow-600', emoji: '⚠️' };
+  return { status: 'สูง (เสี่ยงเก๊าต์)', color: 'text-red-600', emoji: '🚨' };
+};
+
+const getLiverFunctionStatus = (alt, ast) => {
+  if (!alt && !ast) return { status: 'ไม่มีข้อมูล', color: 'text-gray-400', emoji: '❓' };
+  
+  const altNormal = alt <= 40;
+  const astNormal = ast <= 40;
+  
+  if (altNormal && astNormal) return { status: 'ปกติ', color: 'text-green-600', emoji: '✅' };
+  if ((alt > 40 && alt <= 80) || (ast > 40 && ast <= 80)) {
+    return { status: 'สูงเล็กน้อย', color: 'text-yellow-600', emoji: '⚠️' };
+  }
+  return { status: 'ผิดปกติ (ตรวจเพิ่มเติม)', color: 'text-red-600', emoji: '🚨' };
+};
+
+const getHemoglobinStatus = (value, gender) => {
+  if (!value) return { status: 'ไม่มีข้อมูล', color: 'text-gray-400', emoji: '❓' };
+  
+  const maleNormal = value >= 13.5 && value <= 17.5;
+  const femaleNormal = value >= 12.0 && value <= 15.5;
+  
+  if (gender === 'male' && maleNormal) return { status: 'ปกติ', color: 'text-green-600', emoji: '✅' };
+  if (gender === 'female' && femaleNormal) return { status: 'ปกติ', color: 'text-green-600', emoji: '✅' };
+  
+  if (value < (gender === 'male' ? 13.5 : 12.0)) {
+    return { status: 'โลหิตจาง', color: 'text-red-600', emoji: '🩸' };
+  }
+  
+  if (value > (gender === 'male' ? 17.5 : 15.5)) {
+    return { status: 'สูงเกิน', color: 'text-orange-600', emoji: '⚠️' };
+  }
+  
+  return { status: 'ตรวจสอบ', color: 'text-yellow-600', emoji: '🔍' };
+};
+
+const getIronStatus = (iron, tibc) => {
+  if (!iron && !tibc) return { status: 'ไม่มีข้อมูล', color: 'text-gray-400', emoji: '❓' };
+  
+  if (iron && iron >= 60 && iron <= 170) {
+    return { status: 'ปกติ', color: 'text-green-600', emoji: '✅' };
+  }
+  
+  if (iron && iron < 60) {
+    return { status: 'ธาตุเหล็กต่ำ', color: 'text-red-600', emoji: '🔴' };
+  }
+  
+  if (iron && iron > 170) {
+    return { status: 'ธาตุเหล็กสูง', color: 'text-orange-600', emoji: '⚠️' };
+  }
+  
+  return { status: 'ตรวจสอบ', color: 'text-yellow-600', emoji: '🔍' };
+};
+
 const HealthAnalytics = ({ 
   userProfile, 
   recentMetrics, 
@@ -21,6 +99,46 @@ const HealthAnalytics = ({
   const [selectedTimeRange, setSelectedTimeRange] = useState('6months');
   const [activeTab, setActiveTab] = useState('trends');
   const [apiStatus, setApiStatus] = useState({ connected: false, aiActive: false });
+
+  // ฟังก์ชันคำนวณค่าเฉลี่ยที่กรอง null/0 ออก
+  const calculateValidAverage = (fieldName) => {
+    if (!recentMetrics || recentMetrics.length === 0) return null;
+    
+    const validValues = recentMetrics
+      .map(m => m[fieldName])
+      .filter(v => v != null && v !== undefined && v !== '' && v !== 0)
+      .map(v => {
+        const num = typeof v === 'string' ? parseFloat(v) : Number(v);
+        return isNaN(num) || num <= 0 ? null : num;
+      })
+      .filter(v => v !== null);
+    
+    if (validValues.length === 0) return null;
+    return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+  };
+
+  // ฟังก์ชันดึงค่าล่าสุดที่ถูกต้อง
+  const getLatestValidValue = (fieldName) => {
+    if (!recentMetrics || recentMetrics.length === 0) return null;
+    
+    const validMetrics = recentMetrics
+      .filter(metric => metric.measurement_date && metric.measurement_date !== 'undefined')
+      .sort((a, b) => new Date(b.measurement_date) - new Date(a.measurement_date));
+    
+    for (const metric of validMetrics) {
+      const value = metric[fieldName];
+      if (['systolic_bp', 'diastolic_bp', 'heart_rate'].includes(fieldName)) {
+        if (value !== null && value !== undefined && value > 0 && value !== '') {
+          return value;
+        }
+      } else {
+        if (value !== null && value !== undefined && value !== '' && (typeof value === 'number' ? value >= 0 : true)) {
+          return value;
+        }
+      }
+    }
+    return null;
+  };
 
   useEffect(() => {
     console.log('🔄 HealthAnalytics useEffect triggered');
@@ -237,8 +355,13 @@ const HealthAnalytics = ({
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-red-100">
                   <span className="text-red-700 font-medium">ค่าเฉลี่ย</span>
                   <span className="text-red-900 font-semibold">
-                    {trends?.trends?.bloodPressure?.averages?.systolic || '--'}/
-                    {trends?.trends?.bloodPressure?.averages?.diastolic || '--'}
+                    {(() => {
+                      const avgSystolic = calculateValidAverage('systolic_bp');
+                      const avgDiastolic = calculateValidAverage('diastolic_bp');
+                      const systolicText = avgSystolic ? Math.round(avgSystolic) : '--';
+                      const diastolicText = avgDiastolic ? Math.round(avgDiastolic) : '--';
+                      return `${systolicText}/${diastolicText}`;
+                    })()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-red-100">
@@ -298,9 +421,10 @@ const HealthAnalytics = ({
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-amber-100">
                   <span className="text-amber-700 font-medium">ค่าเฉลี่ย</span>
                   <span className="text-amber-900 font-semibold">
-                    {trends?.trends?.bloodSugar?.average && !isNaN(trends.trends.bloodSugar.average) 
-                      ? `${Math.round(trends.trends.bloodSugar.average)} mg/dL` 
-                      : 'ไม่มีข้อมูล'}
+                    {(() => {
+                      const average = calculateValidAverage('blood_sugar_mg');
+                      return average ? `${Math.round(average)} mg/dL` : 'ไม่มีข้อมูล';
+                    })()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between mb-2 py-2 border-b border-amber-100">
@@ -575,14 +699,14 @@ const HealthAnalytics = ({
 
                           {/* ตรวจสอบน้ำตาล */}
                           {(() => {
-                            const latestSugar = recentMetrics?.find(m => m.blood_sugar);
-                            if (latestSugar && latestSugar.blood_sugar >= 126) {
+                            const latestSugar = getLatestValidValue('blood_sugar_mg');
+                            if (latestSugar && latestSugar >= 126) {
                               return (
                                 <div className="flex items-start">
                                   <span className="text-red-500 mr-2 mt-0.5">🔸</span>
                                   <div>
                                     <div className="font-medium text-red-700">
-                                      น้ำตาลในเลือดสูง ({latestSugar.blood_sugar} mg/dL)
+                                      น้ำตาลในเลือดสูง ({latestSugar} mg/dL)
                                     </div>
                                     <div className="text-red-600">
                                       เสี่ยงต่อเบาหวาน โรคหัวใจ ไตเสื่อม ตาบอด
@@ -950,20 +1074,21 @@ const HealthAnalytics = ({
       
       if (hasHypertension) {
         // วิเคราะห์ความดันล่าสุด
-        const latestBP = recentMetrics?.find(m => m.systolic_bp && m.diastolic_bp);
-        if (latestBP) {
-          if (latestBP.systolic_bp >= 140 || latestBP.diastolic_bp >= 90) {
+        const latestSystolic = getLatestValidValue('systolic_bp');
+        const latestDiastolic = getLatestValidValue('diastolic_bp');
+        if (latestSystolic && latestDiastolic) {
+          if (latestSystolic >= 140 || latestDiastolic >= 90) {
             insights.push({
               type: 'warning',
               condition: 'ความดันสูง',
-              message: `ความดันปัจจุบัน ${latestBP.systolic_bp}/${latestBP.diastolic_bp} สูงกว่าเป้าหมาย (<130/80)`,
+              message: `ความดันปัจจุบัน ${latestSystolic}/${latestDiastolic} สูงกว่าเป้าหมาย (<130/80)`,
               advice: 'ควรปรับยาหรือปรึกษาแพทย์'
             });
           } else {
             insights.push({
               type: 'good',
               condition: 'ความดันสูง',
-              message: `ความดันปัจจุบัน ${latestBP.systolic_bp}/${latestBP.diastolic_bp} ควบคุมได้ดี`,
+              message: `ความดันปัจจุบัน ${latestSystolic}/${latestDiastolic} ควบคุมได้ดี`,
               advice: 'รักษาการทานยาและวิถีชีวิตดี ๆ ต่อไป'
             });
           }
@@ -972,27 +1097,27 @@ const HealthAnalytics = ({
       
       if (hasDiabetes) {
         // วิเคราะห์น้ำตาลล่าสุด
-        const latestSugar = recentMetrics?.find(m => m.blood_sugar);
+        const latestSugar = getLatestValidValue('blood_sugar_mg');
         if (latestSugar) {
-          if (latestSugar.blood_sugar >= 130) {
+          if (latestSugar >= 130) {
             insights.push({
               type: 'warning',
               condition: 'เบาหวาน',
-              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL สูงกว่าเป้าหมาย (80-130)`,
+              message: `น้ำตาลในเลือด ${latestSugar} mg/dL สูงกว่าเป้าหมาย (80-130)`,
               advice: 'ควรปรับอาหารและการทานยา'
             });
-          } else if (latestSugar.blood_sugar < 80) {
+          } else if (latestSugar < 80) {
             insights.push({
               type: 'warning',
               condition: 'เบาหวาน',
-              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL ต่ำเกินไป`,
+              message: `น้ำตาลในเลือด ${latestSugar} mg/dL ต่ำเกินไป`,
               advice: 'ระวังน้ำตาลต่ำ ควรรับประทานอาหารเพิ่ม'
             });
           } else {
             insights.push({
               type: 'good',
               condition: 'เบาหวาน',
-              message: `น้ำตาลในเลือด ${latestSugar.blood_sugar} mg/dL อยู่ในเป้าหมาย`,
+              message: `น้ำตาลในเลือด ${latestSugar} mg/dL อยู่ในเป้าหมาย`,
               advice: 'ควบคุมได้ดี รักษาระบบการทานยาต่อไป'
             });
           }
@@ -1323,6 +1448,235 @@ const HealthAnalytics = ({
     );
   };
 
+  // เพิ่มฟังก์ชันใหม่สำหรับแสดงผลการตรวจเลือด
+  const renderLaboratoryTab = () => {
+    // ใช้ getLatestValidValue เพื่อดึงค่าล่าสุดที่ไม่เป็น null
+    const latestMetrics = {
+      uric_acid: getLatestValidValue('uric_acid'),
+      alt: getLatestValidValue('alt'),
+      ast: getLatestValidValue('ast'),
+      hemoglobin: getLatestValidValue('hemoglobin'),
+      hematocrit: getLatestValidValue('hematocrit'),
+      iron: getLatestValidValue('iron'),
+      tibc: getLatestValidValue('tibc')
+    };
+    
+    return (
+      <div className="space-y-6">
+        <div className="text-center mb-6">
+          <h3 className="text-2xl font-bold text-blue-800 mb-2">🧪 การตรวจเลือดครบถ้วน</h3>
+          <p className="text-blue-600">วิเคราะห์ค่าตรวจเลือดเพิ่มเติมเพื่อการดูแลสุขภาพที่ครอบคลุม</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* กรดยูริก */}
+          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-yellow-300 shadow-lg">
+            <h4 className="text-lg font-bold text-yellow-800 mb-4 flex items-center border-b-2 border-yellow-200 pb-2">
+              <span className="text-2xl mr-2">💎</span>
+              กรดยูริก (Uric Acid)
+            </h4>
+            {(() => {
+              const status = getUricAcidStatus(latestMetrics.uric_acid);
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-yellow-700 font-medium">ค่าปัจจุบัน</span>
+                    <span className="text-2xl font-bold text-yellow-900">
+                      {latestMetrics.uric_acid ? `${latestMetrics.uric_acid} mg/dL` : '--'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-yellow-700 font-medium">สถานะ</span>
+                    <div className="flex items-center">
+                      <span className="mr-1">{status.emoji}</span>
+                      <span className={`font-semibold ${status.color}`}>{status.status}</span>
+                    </div>
+                  </div>
+                  <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                    <div className="text-xs text-yellow-700">
+                      <strong>ค่าปกติ:</strong> 2.5-6.0 mg/dL<br/>
+                      <strong>หมายเหตุ:</strong> ค่าสูงเสี่ยงโรคเก๊าต์
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* การทำงานของตับ */}
+          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-orange-300 shadow-lg">
+            <h4 className="text-lg font-bold text-orange-800 mb-4 flex items-center border-b-2 border-orange-200 pb-2">
+              <span className="text-2xl mr-2">🫁</span>
+              การทำงานตับ (Liver)
+            </h4>
+            {(() => {
+              const status = getLiverFunctionStatus(latestMetrics.alt, latestMetrics.ast);
+              return (
+                <div>
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-orange-700 font-medium">ALT</span>
+                      <span className="text-lg font-bold text-orange-900">
+                        {latestMetrics.alt ? `${latestMetrics.alt} U/L` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-orange-700 font-medium">AST</span>
+                      <span className="text-lg font-bold text-orange-900">
+                        {latestMetrics.ast ? `${latestMetrics.ast} U/L` : '--'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-orange-700 font-medium">สถานะ</span>
+                    <div className="flex items-center">
+                      <span className="mr-1">{status.emoji}</span>
+                      <span className={`font-semibold ${status.color}`}>{status.status}</span>
+                    </div>
+                  </div>
+                  <div className="bg-orange-50 p-3 rounded border border-orange-200">
+                    <div className="text-xs text-orange-700">
+                      <strong>ค่าปกติ:</strong> ALT ≤40, AST ≤40 U/L<br/>
+                      <strong>หมายเหตุ:</strong> ตรวจสอบการทำงานของตับ
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ฮีโมโกลบิน */}
+          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-red-300 shadow-lg">
+            <h4 className="text-lg font-bold text-red-800 mb-4 flex items-center border-b-2 border-red-200 pb-2">
+              <span className="text-2xl mr-2">🩸</span>
+              ฮีโมโกลบิน (Hemoglobin)
+            </h4>
+            {(() => {
+              const status = getHemoglobinStatus(latestMetrics.hemoglobin, userProfile?.gender);
+              return (
+                <div>
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-red-700 font-medium">Hb</span>
+                      <span className="text-lg font-bold text-red-900">
+                        {latestMetrics.hemoglobin ? `${latestMetrics.hemoglobin} g/dL` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-red-700 font-medium">Hct</span>
+                      <span className="text-lg font-bold text-red-900">
+                        {latestMetrics.hematocrit ? `${latestMetrics.hematocrit}%` : '--'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-red-700 font-medium">สถานะ</span>
+                    <div className="flex items-center">
+                      <span className="mr-1">{status.emoji}</span>
+                      <span className={`font-semibold ${status.color}`}>{status.status}</span>
+                    </div>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded border border-red-200">
+                    <div className="text-xs text-red-700">
+                      <strong>ค่าปกติชาย:</strong> 13.5-17.5 g/dL<br/>
+                      <strong>ค่าปกติหญิง:</strong> 12.0-15.5 g/dL<br/>
+                      <strong>หมายเหตุ:</strong> ตรวจสอบโลหิตจาง
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ธาตุเหล็ก */}
+          <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-gray-300 shadow-lg">
+            <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center border-b-2 border-gray-200 pb-2">
+              <span className="text-2xl mr-2">🔗</span>
+              ธาตุเหล็ก (Iron)
+            </h4>
+            {(() => {
+              const status = getIronStatus(latestMetrics.iron, latestMetrics.tibc);
+              return (
+                <div>
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700 font-medium">Iron</span>
+                      <span className="text-lg font-bold text-gray-900">
+                        {latestMetrics.iron ? `${latestMetrics.iron} μg/dL` : '--'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700 font-medium">TIBC</span>
+                      <span className="text-lg font-bold text-gray-900">
+                        {latestMetrics.tibc ? `${latestMetrics.tibc} μg/dL` : '--'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-gray-700 font-medium">สถานะ</span>
+                    <div className="flex items-center">
+                      <span className="mr-1">{status.emoji}</span>
+                      <span className={`font-semibold ${status.color}`}>{status.status}</span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                    <div className="text-xs text-gray-700">
+                      <strong>ค่าปกติ:</strong> Iron 60-170 μg/dL<br/>
+                      <strong>TIBC:</strong> 250-450 μg/dL<br/>
+                      <strong>หมายเหตุ:</strong> ตรวจสอบการขาดธาตุเหล็ก
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* สรุปภาพรวมการตรวจเลือด */}
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-300 rounded-lg p-6 shadow-lg">
+          <h3 className="text-xl font-bold text-blue-800 mb-4 flex items-center">
+            <span className="mr-2">📋</span>
+            สรุปผลการตรวจเลือดครบถ้วน
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-lg border border-blue-200">
+              <h4 className="font-bold text-blue-700 mb-2">✅ ค่าที่ปกติ</h4>
+              <div className="text-sm text-blue-600 space-y-1">
+                {latestMetrics.uric_acid && getUricAcidStatus(latestMetrics.uric_acid).status === 'ปกติ' && 
+                  <div>• กรดยูริก: ปกติ</div>}
+                {(latestMetrics.alt && latestMetrics.ast) && 
+                 getLiverFunctionStatus(latestMetrics.alt, latestMetrics.ast).status === 'ปกติ' && 
+                  <div>• การทำงานตับ: ปกติ</div>}
+                {latestMetrics.hemoglobin && 
+                 getHemoglobinStatus(latestMetrics.hemoglobin, userProfile?.gender).status === 'ปกติ' && 
+                  <div>• ฮีโมโกลบิน: ปกติ</div>}
+                {(latestMetrics.iron && latestMetrics.tibc) && 
+                 getIronStatus(latestMetrics.iron, latestMetrics.tibc).status === 'ปกติ' && 
+                  <div>• ธาตุเหล็ก: ปกติ</div>}
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-red-200">
+              <h4 className="font-bold text-red-700 mb-2">⚠️ ค่าที่ต้องติดตาม</h4>
+              <div className="text-sm text-red-600 space-y-1">
+                {latestMetrics.uric_acid && getUricAcidStatus(latestMetrics.uric_acid).status !== 'ปกติ' && 
+                  <div>• กรดยูริก: {getUricAcidStatus(latestMetrics.uric_acid).status}</div>}
+                {(latestMetrics.alt && latestMetrics.ast) && 
+                 getLiverFunctionStatus(latestMetrics.alt, latestMetrics.ast).status !== 'ปกติ' && 
+                  <div>• การทำงานตับ: {getLiverFunctionStatus(latestMetrics.alt, latestMetrics.ast).status}</div>}
+                {latestMetrics.hemoglobin && 
+                 getHemoglobinStatus(latestMetrics.hemoglobin, userProfile?.gender).status !== 'ปกติ' && 
+                  <div>• ฮีโมโกลบิน: {getHemoglobinStatus(latestMetrics.hemoglobin, userProfile?.gender).status}</div>}
+                {(latestMetrics.iron && latestMetrics.tibc) && 
+                 getIronStatus(latestMetrics.iron, latestMetrics.tibc).status !== 'ปกติ' && 
+                  <div>• ธาตุเหล็ก: {getIronStatus(latestMetrics.iron, latestMetrics.tibc).status}</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white flex items-center justify-center">
@@ -1472,7 +1826,8 @@ const HealthAnalytics = ({
           {[
             { id: 'trends', label: '📈 แนวโน้ม', icon: '📈' },
             { id: 'predictions', label: '🔮 การพยากรณ์', icon: '🔮' },
-            { id: 'insights', label: '💡 ข้อมูลเชิงลึก', icon: '💡' }
+            { id: 'insights', label: '💡 ข้อมูลเชิงลึก', icon: '💡' },
+            { id: 'laboratory', label: '🧪 การตรวจเลือด', icon: '🧪' }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1494,6 +1849,7 @@ const HealthAnalytics = ({
           {activeTab === 'trends' && renderTrendsTab()}
           {activeTab === 'predictions' && renderPredictionsTab()}
           {activeTab === 'insights' && renderInsightsTab()}
+          {activeTab === 'laboratory' && renderLaboratoryTab()}
         </div>
 
         {/* Health Education Section */}

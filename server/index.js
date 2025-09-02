@@ -15,25 +15,98 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Database connection
+// Database connection with Pool and Reconnection
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'health_management',
-  charset: 'utf8mb4'
+  charset: 'utf8mb4',
+  // Connection Pool สำหรับ Production
+  connectionLimit: 10,
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true,
+  // Render-specific optimizations
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
 };
 
 let db;
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 5;
 
 async function initDatabase() {
   try {
-    db = await mysql.createConnection(dbConfig);
-    console.log('🔗 Connected to MySQL database');
+    connectionAttempts++;
+    console.log(`🔄 Database connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
+    
+    // ใช้ Connection Pool สำหรับ production
+    if (process.env.NODE_ENV === 'production') {
+      db = mysql.createPool(dbConfig);
+      console.log('🔗 Connected to MySQL database with connection pool');
+    } else {
+      db = await mysql.createConnection(dbConfig);
+      console.log('🔗 Connected to MySQL database');
+    }
+    
+    // Test connection
+    await db.execute('SELECT 1');
+    console.log('✅ Database connection verified');
+    connectionAttempts = 0; // Reset on success
+    
   } catch (error) {
-    console.error('❌ Database connection error:', error);
-    process.exit(1);
+    console.error(`❌ Database connection error (attempt ${connectionAttempts}):`, error.message);
+    
+    if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+      console.log(`⏳ Retrying in 5 seconds...`);
+      setTimeout(initDatabase, 5000);
+    } else {
+      console.error('💀 Max connection attempts reached. Exiting...');
+      process.exit(1);
+    }
   }
+}
+
+// Database reconnection handler
+async function handleDatabaseError(error, operation = 'unknown') {
+  console.error(`❌ Database error during ${operation}:`, error.message);
+  
+  if (error.code === 'PROTOCOL_CONNECTION_LOST' || 
+      error.code === 'ECONNRESET' || 
+      error.code === 'ETIMEDOUT') {
+    console.log('🔄 Attempting to reconnect to database...');
+    await initDatabase();
+  }
+  
+  throw error;
+}
+
+// Database query wrapper with retry logic
+async function executeQuery(query, params = []) {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await db.execute(query, params);
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ Query attempt ${attempt} failed:`, error.message);
+      
+      if (attempt < maxRetries && 
+          (error.code === 'PROTOCOL_CONNECTION_LOST' || 
+           error.code === 'ECONNRESET' || 
+           error.code === 'ETIMEDOUT')) {
+        
+        console.log(`⏳ Retrying query in ${attempt * 1000}ms...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        await handleDatabaseError(error, 'query retry');
+      }
+    }
+  }
+  
+  throw lastError;
 }
 
 // JWT Secret
@@ -67,6 +140,54 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ===============================
+// 🏥 Health Check & Keep-Alive Routes (For Render Deployment)
+// ===============================
+
+// Health check endpoint to prevent sleep mode
+app.get('/api/health', async (req, res) => {
+  try {
+    // Test database connection
+    await executeQuery('SELECT 1 as health_check');
+    
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      database: 'connected'
+    });
+  } catch (error) {
+    console.error('❌ Health check failed:', error.message);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      database: 'disconnected'
+    });
+  }
+});
+
+// Keep-alive endpoint for external monitoring
+app.get('/api/ping', (req, res) => {
+  res.status(200).json({
+    message: 'pong',
+    timestamp: new Date().toISOString(),
+    server: 'active'
+  });
+});
+
+// Server status endpoint
+app.get('/api/status', (req, res) => {
+  res.status(200).json({
+    server: 'Health Management API',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    uptime: `${Math.floor(process.uptime())} seconds`
+  });
+});
+
+// ===============================
 // 🔐 Authentication Routes
 // ===============================
 
@@ -84,7 +205,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // Check if user exists
-    const [existingUsers] = await db.execute(
+    const [existingUsers] = await executeQuery(
       'SELECT user_id FROM users WHERE username = ? OR email = ?',
       [username, email]
     );
@@ -98,7 +219,7 @@ app.post('/api/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Insert user
-    const [result] = await db.execute(
+    const [result] = await executeQuery(
       'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
       [username, email, passwordHash]
     );
@@ -108,7 +229,7 @@ app.post('/api/auth/register', async (req, res) => {
     // Insert profile data if provided
     if (profile) {
       try {
-        await db.execute(
+        await executeQuery(
           `INSERT INTO user_profiles (
             user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
             phone, emergency_contact, medical_conditions, medications, allergies, 
@@ -388,43 +509,90 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
       measurement_date, systolic_bp, diastolic_bp, heart_rate,
       blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
       triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, 
-      weight_kg, notes
+      weight_kg, notes, uric_acid, alt, ast, hemoglobin, hematocrit, iron, tibc
     } = req.body;
 
-    // Convert undefined/empty string values to null for MySQL
+    // Convert undefined/empty string/zero values to null for MySQL
     const sanitizeValue = (value) => {
-      if (value === undefined || value === '' || value === null) return null;
+      if (value === undefined || value === '' || value === null || value === 0) return null;
       return value;
     };
 
-    const sanitizedData = [
-      req.user.userId,
-      sanitizeValue(measurement_date),
-      sanitizeValue(systolic_bp),
-      sanitizeValue(diastolic_bp),
-      sanitizeValue(heart_rate),
-      sanitizeValue(blood_sugar_mg),
-      sanitizeValue(cholesterol_total),
-      sanitizeValue(cholesterol_hdl),
-      sanitizeValue(cholesterol_ldl),
-      sanitizeValue(triglycerides),
-      sanitizeValue(hba1c),
-      sanitizeValue(body_fat_percentage),
-      sanitizeValue(muscle_mass_kg),
-      sanitizeValue(weight_kg),
-      sanitizeValue(notes)
-    ];
+    // ตรวจสอบว่าฐานข้อมูลมี column ใหม่หรือไม่
+    let hasNewColumns = false;
+    try {
+      await db.execute('SELECT uric_acid FROM health_metrics LIMIT 1');
+      hasNewColumns = true;
+    } catch (error) {
+      console.log('⚠️ New columns not found in database, using basic fields only');
+      hasNewColumns = false;
+    }
+
+    let sanitizedData, query;
+
+    if (hasNewColumns) {
+      // ใช้ query แบบใหม่ที่มีฟิลด์ครบ
+      sanitizedData = [
+        req.user.userId,
+        sanitizeValue(measurement_date),
+        sanitizeValue(systolic_bp),
+        sanitizeValue(diastolic_bp),
+        sanitizeValue(heart_rate),
+        sanitizeValue(blood_sugar_mg),
+        sanitizeValue(cholesterol_total),
+        sanitizeValue(cholesterol_hdl),
+        sanitizeValue(cholesterol_ldl),
+        sanitizeValue(triglycerides),
+        sanitizeValue(hba1c),
+        sanitizeValue(body_fat_percentage),
+        sanitizeValue(muscle_mass_kg),
+        sanitizeValue(weight_kg),
+        sanitizeValue(uric_acid),
+        sanitizeValue(alt),
+        sanitizeValue(ast),
+        sanitizeValue(hemoglobin),
+        sanitizeValue(hematocrit),
+        sanitizeValue(iron),
+        sanitizeValue(tibc),
+        sanitizeValue(notes)
+      ];
+
+      query = `INSERT INTO health_metrics 
+               (user_id, measurement_date, systolic_bp, diastolic_bp, heart_rate,
+                blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
+                triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, weight_kg,
+                uric_acid, alt, ast, hemoglobin, hematocrit, iron, tibc, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    } else {
+      // ใช้ query แบบเดิมที่มีฟิลด์พื้นฐาน
+      sanitizedData = [
+        req.user.userId,
+        sanitizeValue(measurement_date),
+        sanitizeValue(systolic_bp),
+        sanitizeValue(diastolic_bp),
+        sanitizeValue(heart_rate),
+        sanitizeValue(blood_sugar_mg),
+        sanitizeValue(cholesterol_total),
+        sanitizeValue(cholesterol_hdl),
+        sanitizeValue(cholesterol_ldl),
+        sanitizeValue(triglycerides),
+        sanitizeValue(hba1c),
+        sanitizeValue(body_fat_percentage),
+        sanitizeValue(muscle_mass_kg),
+        sanitizeValue(weight_kg),
+        sanitizeValue(notes)
+      ];
+
+      query = `INSERT INTO health_metrics 
+               (user_id, measurement_date, systolic_bp, diastolic_bp, heart_rate,
+                blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
+                triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, weight_kg, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    }
 
     console.log('📊 Sanitized health metrics data:', sanitizedData);
 
-    const [result] = await db.execute(
-      `INSERT INTO health_metrics 
-       (user_id, measurement_date, systolic_bp, diastolic_bp, heart_rate,
-        blood_sugar_mg, cholesterol_total, cholesterol_hdl, cholesterol_ldl,
-        triglycerides, hba1c, body_fat_percentage, muscle_mass_kg, weight_kg, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      sanitizedData
-    );
+    const [result] = await db.execute(query, sanitizedData);
 
     console.log('✅ Health metrics inserted with ID:', result.insertId);
 
@@ -1263,22 +1431,137 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    message: 'Health Management API is running!',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  });
-});
+// ===============================
+// 🔄 Keep-Alive System for Render
+// ===============================
 
-// Start server
-async function startServer() {
-  await initDatabase();
-  
-  app.listen(PORT, () => {
-    console.log(`🚀 Health Management API running on port ${PORT}`);
-    console.log(`📊 API Endpoint: http://localhost:${PORT}/api`);
-  });
+let keepAliveInterval;
+let lastActivity = Date.now();
+
+// Self-ping to prevent sleep mode (Render free tier)
+function initKeepAlive() {
+  if (process.env.NODE_ENV === 'production' && process.env.RENDER_SERVICE_URL) {
+    console.log('🔄 Initializing keep-alive system for Render...');
+    
+    // Ping ตัวเองทุก 10 นาที (Render sleeps after 15 minutes)
+    keepAliveInterval = setInterval(async () => {
+      try {
+        const fetch = await import('node-fetch').then(module => module.default);
+        const response = await fetch(`${process.env.RENDER_SERVICE_URL}/api/ping`);
+        
+        if (response.ok) {
+          console.log('✅ Keep-alive ping successful');
+          lastActivity = Date.now();
+        } else {
+          console.log('⚠️ Keep-alive ping failed:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ Keep-alive ping error:', error.message);
+      }
+    }, 10 * 60 * 1000); // 10 minutes
+    
+    console.log('✅ Keep-alive system initialized');
+  }
 }
 
-startServer().catch(console.error);
+// Stop keep-alive on shutdown
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    console.log('🛑 Keep-alive system stopped');
+  }
+}
+
+// Track API activity
+function trackActivity(req, res, next) {
+  lastActivity = Date.now();
+  next();
+}
+
+// Apply activity tracking to all routes
+app.use(trackActivity);
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully...');
+  stopKeepAlive();
+  
+  if (db) {
+    console.log('🔐 Closing database connection...');
+    if (typeof db.end === 'function') {
+      db.end();
+    } else if (typeof db.destroy === 'function') {
+      db.destroy();
+    }
+  }
+  
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully...');
+  stopKeepAlive();
+  
+  if (db) {
+    console.log('🔐 Closing database connection...');
+    if (typeof db.end === 'function') {
+      db.end();
+    } else if (typeof db.destroy === 'function') {
+      db.destroy();
+    }
+  }
+  
+  process.exit(0);
+});
+
+// Start server with enhanced error handling
+async function startServer() {
+  try {
+    console.log('🚀 Starting Health Management API...');
+    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 Port: ${PORT}`);
+    
+    await initDatabase();
+    
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Health Management API running on port ${PORT}`);
+      console.log(`📊 API Endpoint: http://localhost:${PORT}/api`);
+      console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
+      
+      // Initialize keep-alive for production
+      initKeepAlive();
+    });
+    
+    // Handle server errors
+    server.on('error', (error) => {
+      console.error('❌ Server error:', error);
+      
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use`);
+        process.exit(1);
+      }
+    });
+    
+    // Handle unhandled promise rejections
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    });
+    
+    // Handle uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      console.error('❌ Uncaught Exception:', error);
+      stopKeepAlive();
+      process.exit(1);
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+console.log('🎯 Health Management API - Starting...');
+startServer().catch((error) => {
+  console.error('💀 Critical startup error:', error);
+  process.exit(1);
+});

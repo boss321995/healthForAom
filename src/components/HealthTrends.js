@@ -65,23 +65,30 @@ export default function HealthTrends({ userId }) {
   const selectedMetric = metricLabels[selected];
   const colorScheme = colors[selectedMetric.color];
 
+  // กรองข้อมูลที่มีค่าที่ถูกต้อง (ไม่ใช่ null, undefined, 0, หรือ '')
+  const validMetrics = metrics.filter(m => {
+    const value = m[selected];
+    if (value == null || value === undefined || value === '' || value === 0) return false;
+    const num = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return !isNaN(num) && num > 0;
+  });
+
   // เตรียมข้อมูลกราฟแนวนอน
   const chartData = {
-    labels: metrics.map(m => {
+    labels: validMetrics.map(m => {
       const date = new Date(m.measurement_date);
       return `${date.getDate()}/${date.getMonth() + 1}`;
     }),
     datasets: [
       {
         label: `${selectedMetric.label} (${selectedMetric.unit})`,
-        data: metrics.map(m => {
+        data: validMetrics.map(m => {
           const value = m[selected];
-          if (value == null || value === undefined || value === '') return 0;
           const num = typeof value === 'string' ? parseFloat(value) : Number(value);
-          return isNaN(num) ? 0 : num;
+          return num;
         }),
         backgroundColor: chartType === 'bar' ? 
-          metrics.map(() => colorScheme.primary + '80') : // ความโปร่งใส 50%
+          validMetrics.map(() => colorScheme.primary + '80') : // ความโปร่งใส 50%
           colorScheme.secondary,
         borderColor: colorScheme.primary,
         borderWidth: 3,
@@ -237,14 +244,14 @@ export default function HealthTrends({ userId }) {
     }
   };
 
-  // คำนวณสถิติ
+  // คำนวณสถิติ (กรองข้อมูลที่ไม่ถูกต้อง)
   const rawValues = metrics.map(m => m[selected]);
   const values = metrics
     .map(m => m[selected])
-    .filter(v => v != null && v !== undefined && v !== '')
+    .filter(v => v != null && v !== undefined && v !== '' && v !== 0)
     .map(v => {
       const num = typeof v === 'string' ? parseFloat(v) : Number(v);
-      return isNaN(num) ? null : num;
+      return isNaN(num) || num <= 0 ? null : num;
     })
     .filter(v => v !== null);
     

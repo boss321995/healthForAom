@@ -43,6 +43,13 @@ const Dashboard = () => {
     body_fat_percentage: '',
     muscle_mass_kg: '',
     weight_kg: '',
+    uric_acid: '',
+    alt: '',
+    ast: '',
+    hemoglobin: '',
+    hematocrit: '',
+    iron: '',
+    tibc: '',
     notes: ''
   });
 
@@ -240,14 +247,42 @@ const Dashboard = () => {
     return 'อ้วนระดับ 3';
   };
 
-  const getCurrentBMI = () => {
-    // ใช้เฉพาะ health metrics สำหรับการคำนวณ BMI
-    const latestMetric = recentMetrics?.find(item => item.weight_kg || item.measurement_date);
-    const latestWeight = latestMetric?.weight_kg;
+  // ฟังก์ชันดึงค่าล่าสุดที่ไม่เป็น null สำหรับค่าใดค่าหนึ่ง
+  const getLatestValidValue = (fieldName) => {
+    if (!recentMetrics || recentMetrics.length === 0) {
+      return null;
+    }
     
-    // Use profile weight if no recent metric weight
-    const weight = latestWeight || userProfile?.weight_kg;
-    const height = userProfile?.height_cm;
+    // กรองเฉพาะรายการที่มีวันที่ที่ถูกต้อง และเรียงจากวันที่ล่าสุดก่อน
+    const validMetrics = recentMetrics
+      .filter(metric => metric.measurement_date && metric.measurement_date !== 'undefined')
+      .sort((a, b) => new Date(b.measurement_date) - new Date(a.measurement_date));
+    
+    for (const metric of validMetrics) {
+      const value = metric[fieldName];
+      
+      // สำหรับความดันและอัตราการเต้นหัวใจ ไม่ควรเป็น 0 จริงๆ แต่สำหรับค่าอื่นอาจเป็น 0 ได้
+      if (['systolic_bp', 'diastolic_bp', 'heart_rate'].includes(fieldName)) {
+        if (value !== null && value !== undefined && value > 0 && value !== '') {
+          return value;
+        }
+      } else {
+        if (value !== null && value !== undefined && value !== '' && (typeof value === 'number' ? value >= 0 : true)) {
+          return value;
+        }
+      }
+    }
+    
+    return null;
+  };
+
+  const getCurrentBMI = () => {
+    // ใช้เฉพาะ health metrics ที่มีค่าน้ำหนักจริง (ไม่ใช่ null หรือ 0)
+    const latestWeight = getLatestValidValue('weight_kg');
+    
+    // Use profile weight if no recent metric weight (และต้องมากกว่า 0)
+    const weight = latestWeight || (userProfile?.weight_kg > 0 ? userProfile?.weight_kg : null);
+    const height = userProfile?.height_cm > 0 ? userProfile?.height_cm : null;
     
     return calculateBMI(height, weight);
   };
@@ -280,12 +315,13 @@ const Dashboard = () => {
                   medications.includes('rifampin');
     
     // ตรวจสอบค่าสุขภาพล่าสุด
-    const latestBP = recentMetrics.find(m => m.systolic_bp && m.diastolic_bp);
-    const latestSugar = recentMetrics.find(m => m.blood_sugar);
-    const latestWeight = recentMetrics.find(m => m.weight_kg);
+    const latestSystolic = getLatestValidValue('systolic_bp');
+    const latestDiastolic = getLatestValidValue('diastolic_bp');
+    const latestBloodSugar = getLatestValidValue('blood_sugar_mg');
+    const latestWeight = getLatestValidValue('weight_kg');
     
     // คำแนะนำสำหรับผู้ที่มีความดันสูง
-    if (hasHypertension || (latestBP && (latestBP.systolic_bp >= 140 || latestBP.diastolic_bp >= 90))) {
+    if (hasHypertension || (latestSystolic >= 140 || latestDiastolic >= 90)) {
       tips.push({
         icon: '💓',
         title: 'สำหรับผู้ที่มีความดันสูง',
@@ -313,7 +349,7 @@ const Dashboard = () => {
     }
     
     // คำแนะนำสำหรับผู้เบาหวาน
-    if (hasDiabetes || (latestSugar && latestSugar.blood_sugar > 126)) {
+    if (hasDiabetes || (latestBloodSugar && latestBloodSugar > 126)) {
       tips.push({
         icon: '🍎',
         title: 'สำหรับผู้เบาหวาน',
@@ -342,21 +378,21 @@ const Dashboard = () => {
     }
     
     // เพิ่มคำแนะนำตามค่าสุขภาพล่าสุด
-    if (latestBP && (latestBP.systolic_bp >= 140 || latestBP.diastolic_bp >= 90)) {
+    if (latestSystolic && latestDiastolic && (latestSystolic >= 140 || latestDiastolic >= 90)) {
       tips.push({
         icon: '⚠️',
         title: 'ความดันสูงกว่าปกติ',
-        content: `ความดันล่าสุด ${latestBP.systolic_bp}/${latestBP.diastolic_bp} mmHg - ควรพักผ่อน ลดความเครียด ออกกำลังกายเบาๆ`,
+        content: `ความดันล่าสุด ${latestSystolic}/${latestDiastolic} mmHg - ควรพักผ่อน ลดความเครียด ออกกำลังกายเบาๆ`,
         color: 'red'
       });
     }
     
-    if (latestSugar && latestSugar.blood_sugar > 140) {
-      const level = latestSugar.blood_sugar > 200 ? 'สูงมาก' : latestSugar.blood_sugar > 180 ? 'สูง' : 'สูงเล็กน้อย';
+    if (latestBloodSugar && latestBloodSugar > 140) {
+      const level = latestBloodSugar > 200 ? 'สูงมาก' : latestBloodSugar > 180 ? 'สูง' : 'สูงเล็กน้อย';
       tips.push({
         icon: '📊',
         title: `น้ำตาล${level}`,
-        content: `น้ำตาลล่าสุด ${latestSugar.blood_sugar} mg/dL - ควรระวังอาหาร ออกกำลังกาย หากสูงมากควรพบแพทย์`,
+        content: `น้ำตาลล่าสุด ${latestBloodSugar} mg/dL - ควรระวังอาหาร ออกกำลังกาย หากสูงมากควรพบแพทย์`,
         color: 'red'
       });
     }
@@ -395,12 +431,11 @@ const Dashboard = () => {
   };
 
   const getCurrentWeight = () => {
-    // ใช้เฉพาะ health metrics สำหรับการคำนวณน้ำหนัก
-    const latestMetric = recentMetrics?.find(item => item.weight_kg || item.measurement_date);
-    const latestWeight = latestMetric?.weight_kg;
+    // ดึงค่าน้ำหนักล่าสุดที่ไม่เป็น null
+    const latestWeight = getLatestValidValue('weight_kg');
     
-    // Use profile weight if no recent metric weight
-    return latestWeight || userProfile?.weight_kg;
+    // Use profile weight if no recent metric weight (และต้องมากกว่า 0)
+    return latestWeight || (userProfile?.weight_kg > 0 ? userProfile?.weight_kg : null);
   };
 
   const getBPStatus = (systolic, diastolic) => {
@@ -498,7 +533,8 @@ const Dashboard = () => {
           const numericFields = [
             'systolic_bp', 'diastolic_bp', 'heart_rate', 'blood_sugar_mg',
             'cholesterol_total', 'cholesterol_hdl', 'cholesterol_ldl',
-            'triglycerides', 'hba1c', 'body_fat_percentage', 'muscle_mass_kg', 'weight_kg'
+            'triglycerides', 'hba1c', 'body_fat_percentage', 'muscle_mass_kg', 'weight_kg',
+            'uric_acid', 'alt', 'ast', 'hemoglobin', 'hematocrit', 'iron', 'tibc'
           ];
           
           if (numericFields.includes(key) && value !== '') {
@@ -532,6 +568,13 @@ const Dashboard = () => {
         body_fat_percentage: '',
         muscle_mass_kg: '',
         weight_kg: '',
+        uric_acid: '',
+        alt: '',
+        ast: '',
+        hemoglobin: '',
+        hematocrit: '',
+        iron: '',
+        tibc: '',
         notes: ''
       });
       
@@ -804,7 +847,6 @@ const Dashboard = () => {
       return null;
     }
 
-    const latestMetric = recentMetrics[0];
     let totalScore = 0;
     let factors = 0;
 
@@ -829,11 +871,11 @@ const Dashboard = () => {
       factors++;
     }
 
-    // Blood Pressure Score (25 points)
-    if (latestMetric.systolic_bp && latestMetric.diastolic_bp) {
+    // Blood Pressure Score (25 points) - ใช้ค่าล่าสุดที่มีข้อมูล
+    const systolic = getLatestValidValue('systolic_bp');
+    const diastolic = getLatestValidValue('diastolic_bp');
+    if (systolic && diastolic) {
       let bpScore = 0;
-      const systolic = latestMetric.systolic_bp;
-      const diastolic = latestMetric.diastolic_bp;
       
       if (systolic <= 120 && diastolic <= 80) {
         bpScore = 25; // Normal
@@ -850,10 +892,10 @@ const Dashboard = () => {
       factors++;
     }
 
-    // Blood Sugar Score (25 points)
-    if (latestMetric.blood_sugar_mg) {
+    // Blood Sugar Score (25 points) - ใช้ค่าล่าสุดที่มีข้อมูล
+    const bloodSugar = getLatestValidValue('blood_sugar_mg');
+    if (bloodSugar) {
       let sugarScore = 0;
-      const bloodSugar = latestMetric.blood_sugar_mg;
       
       if (bloodSugar >= 70 && bloodSugar <= 99) {
         sugarScore = 25; // Normal fasting
@@ -868,10 +910,10 @@ const Dashboard = () => {
       factors++;
     }
 
-    // Heart Rate Score (25 points)
-    if (latestMetric.heart_rate) {
+    // Heart Rate Score (25 points) - ใช้ค่าล่าสุดที่มีข้อมูล
+    const heartRate = getLatestValidValue('heart_rate');
+    if (heartRate) {
       let hrScore = 0;
-      const heartRate = latestMetric.heart_rate;
       
       if (heartRate >= 60 && heartRate <= 100) {
         hrScore = 25; // Normal resting heart rate
@@ -903,10 +945,13 @@ const Dashboard = () => {
               averageScore >= 60 ? 'ปานกลาง' : 'ต้องปรับปรุง',
       details: {
         bmi: currentBMI,
-        bloodPressure: latestMetric.systolic_bp && latestMetric.diastolic_bp ? 
-          `${latestMetric.systolic_bp}/${latestMetric.diastolic_bp}` : null,
-        bloodSugar: latestMetric.blood_sugar_mg,
-        heartRate: latestMetric.heart_rate
+        bloodPressure: (() => {
+          const systolic = getLatestValidValue('systolic_bp');
+          const diastolic = getLatestValidValue('diastolic_bp');
+          return (systolic && diastolic) ? `${systolic}/${diastolic}` : null;
+        })(),
+        bloodSugar: getLatestValidValue('blood_sugar_mg'),
+        heartRate: getLatestValidValue('heart_rate')
       }
     };
   };
@@ -924,7 +969,6 @@ const Dashboard = () => {
       medical: []
     };
 
-    const latestMetric = recentMetrics[0];
     const currentBMI = getCurrentBMI();
 
     // BMI insights
@@ -941,11 +985,10 @@ const Dashboard = () => {
       }
     }
 
-    // Blood pressure insights
-    if (latestMetric.systolic_bp && latestMetric.diastolic_bp) {
-      const systolic = latestMetric.systolic_bp;
-      const diastolic = latestMetric.diastolic_bp;
-      
+    // Blood pressure insights - ใช้ค่าล่าสุดที่มีข้อมูล
+    const systolic = getLatestValidValue('systolic_bp');
+    const diastolic = getLatestValidValue('diastolic_bp');
+    if (systolic && diastolic) {
       if (systolic > 140 || diastolic > 90) {
         insights.push(`ความดันโลหิต ${systolic}/${diastolic} สูงกว่าปกติ`);
         recommendations.diet.push('ลดการบริโภคเกลือและอาหารแปรรูป');
@@ -957,10 +1000,9 @@ const Dashboard = () => {
       }
     }
 
-    // Blood sugar insights
-    if (latestMetric.blood_sugar_mg) {
-      const bloodSugar = latestMetric.blood_sugar_mg;
-      
+    // Blood sugar insights - ใช้ค่าล่าสุดที่มีข้อมูล
+    const bloodSugar = getLatestValidValue('blood_sugar_mg');
+    if (bloodSugar) {
       if (bloodSugar > 126) {
         insights.push(`ระดับน้ำตาลในเลือด ${bloodSugar} mg/dL สูงกว่าปกติมาก`);
         recommendations.diet.push('ลดการบริโภคน้ำตาลและคาร์โบไฮเดรตซับซ้อน');
@@ -972,10 +1014,9 @@ const Dashboard = () => {
       }
     }
 
-    // Heart rate insights
-    if (latestMetric.heart_rate) {
-      const heartRate = latestMetric.heart_rate;
-      
+    // Heart rate insights - ใช้ค่าล่าสุดที่มีข้อมูล
+    const heartRate = getLatestValidValue('heart_rate');
+    if (heartRate) {
       if (heartRate > 100) {
         insights.push(`อัตราการเต้นของหัวใจ ${heartRate} bpm สูงกว่าปกติ`);
         recommendations.lifestyle.push('หลีกเลี่ยงคาเฟอีนและจัดการความเครียด');
@@ -1099,7 +1140,7 @@ const Dashboard = () => {
                     <p className="text-blue-700 text-xs sm:text-sm truncate">
                       {getBMICategory(getCurrentBMI())}
                     </p>
-                    {getCurrentBMI() && (
+                    {getCurrentBMI() && getCurrentWeight() && (
                       <p className="text-xs text-blue-500 mt-1 truncate">
                         {userProfile?.height_cm}cm, {getCurrentWeight()}kg
                       </p>
@@ -1115,13 +1156,22 @@ const Dashboard = () => {
                   <div className="flex-1 min-w-0">
                     <p className="text-blue-600 text-xs sm:text-sm font-medium">ความดันโลหิต</p>
                     <p className="text-xl sm:text-2xl font-bold text-blue-900 truncate">
-                      {healthSummary?.systolic_bp && healthSummary?.diastolic_bp
-                        ? `${healthSummary.systolic_bp}/${healthSummary.diastolic_bp}`
-                        : '--/--'
-                      }
+                      {(() => {
+                        const systolic = getLatestValidValue('systolic_bp');
+                        const diastolic = getLatestValidValue('diastolic_bp');
+                        return (systolic && diastolic) ? `${systolic}/${diastolic}` : '--/--';
+                      })()}
                     </p>
-                    <p className={`text-xs sm:text-sm truncate ${getBPStatus(healthSummary?.systolic_bp, healthSummary?.diastolic_bp).color}`}>
-                      {getBPStatus(healthSummary?.systolic_bp, healthSummary?.diastolic_bp).status}
+                    <p className={`text-xs sm:text-sm truncate ${(() => {
+                      const systolic = getLatestValidValue('systolic_bp');
+                      const diastolic = getLatestValidValue('diastolic_bp');
+                      return getBPStatus(systolic, diastolic).color;
+                    })()}`}>
+                      {(() => {
+                        const systolic = getLatestValidValue('systolic_bp');
+                        const diastolic = getLatestValidValue('diastolic_bp');
+                        return getBPStatus(systolic, diastolic).status;
+                      })()}
                     </p>
                   </div>
                   <div className="text-2xl sm:text-3xl ml-2">💓</div>
@@ -1134,8 +1184,14 @@ const Dashboard = () => {
                   <div className="flex-1 min-w-0">
                     <p className="text-blue-600 text-xs sm:text-sm font-medium">อัตราการเต้นหัวใจ</p>
                     <p className="text-xl sm:text-2xl font-bold text-blue-900 truncate">
-                      {healthSummary?.heart_rate || '--'}
-                      {healthSummary?.heart_rate && <span className="text-sm"> bpm</span>}
+                      {(() => {
+                        const heartRate = getLatestValidValue('heart_rate');
+                        return heartRate ? `${heartRate}` : '--';
+                      })()}
+                      {(() => {
+                        const heartRate = getLatestValidValue('heart_rate');
+                        return heartRate ? <span className="text-sm"> bpm</span> : null;
+                      })()}
                     </p>
                   </div>
                   <div className="text-2xl sm:text-3xl ml-2">💗</div>
@@ -1736,6 +1792,114 @@ const Dashboard = () => {
                         className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
                       />
                     </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        กรดยูริก (mg/dL)
+                      </label>
+                      <input
+                        type="number"
+                        name="uric_acid"
+                        value={metricsForm.uric_acid}
+                        onChange={handleMetricsInputChange}
+                        min="1"
+                        max="20"
+                        step="0.1"
+                        placeholder="เช่น 5.5"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        ALT (U/L)
+                      </label>
+                      <input
+                        type="number"
+                        name="alt"
+                        value={metricsForm.alt}
+                        onChange={handleMetricsInputChange}
+                        min="1"
+                        max="500"
+                        placeholder="เช่น 25"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        AST (U/L)
+                      </label>
+                      <input
+                        type="number"
+                        name="ast"
+                        value={metricsForm.ast}
+                        onChange={handleMetricsInputChange}
+                        min="1"
+                        max="500"
+                        placeholder="เช่น 30"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        ฮีโมโกลบิน (g/dL)
+                      </label>
+                      <input
+                        type="number"
+                        name="hemoglobin"
+                        value={metricsForm.hemoglobin}
+                        onChange={handleMetricsInputChange}
+                        min="5"
+                        max="20"
+                        step="0.1"
+                        placeholder="เช่น 13.5"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        ฮีมาโตคริต (%)
+                      </label>
+                      <input
+                        type="number"
+                        name="hematocrit"
+                        value={metricsForm.hematocrit}
+                        onChange={handleMetricsInputChange}
+                        min="15"
+                        max="60"
+                        step="0.1"
+                        placeholder="เช่น 40.5"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        ธาตุเหล็ก (μg/dL)
+                      </label>
+                      <input
+                        type="number"
+                        name="iron"
+                        value={metricsForm.iron}
+                        onChange={handleMetricsInputChange}
+                        min="10"
+                        max="300"
+                        placeholder="เช่น 100"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-semibold mb-2">
+                        TIBC (μg/dL)
+                      </label>
+                      <input
+                        type="number"
+                        name="tibc"
+                        value={metricsForm.tibc}
+                        onChange={handleMetricsInputChange}
+                        min="200"
+                        max="600"
+                        placeholder="เช่น 350"
+                        className="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-lg text-red-900 placeholder-red-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1849,6 +2013,14 @@ const Dashboard = () => {
                         hba1c: '',
                         body_fat_percentage: '',
                         muscle_mass_kg: '',
+                        weight_kg: '',
+                        uric_acid: '',
+                        alt: '',
+                        ast: '',
+                        hemoglobin: '',
+                        hematocrit: '',
+                        iron: '',
+                        tibc: '',
                         notes: ''
                       });
                       setSubmitMessage({ type: '', text: '' });
