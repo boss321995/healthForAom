@@ -348,22 +348,26 @@ const Dashboard = () => {
         console.error('Error fetching health metrics:', error);
       }
 
-      // Fetch medications
+      // Fetch medications (with fallback for new feature)
       try {
         const medicationsResponse = await axios.get('/api/medications', { headers });
         setMedications(medicationsResponse.data || []);
         console.log('✅ Medications loaded:', medicationsResponse.data?.length || 0);
       } catch (error) {
-        console.error('Error fetching medications:', error);
+        console.log('ℹ️ Medications API not available yet (new feature):', error.response?.status);
+        // Set empty array for now - feature will work when backend is ready
+        setMedications([]);
       }
 
-      // Fetch medication history
+      // Fetch medication history (with fallback for new feature)
       try {
         const medicationLogsResponse = await axios.get('/api/medication-logs', { headers });
         setMedicationHistory(medicationLogsResponse.data || []);
         console.log('✅ Medication history loaded:', medicationLogsResponse.data?.length || 0);
       } catch (error) {
-        console.error('Error fetching medication history:', error);
+        console.log('ℹ️ Medication logs API not available yet (new feature):', error.response?.status);
+        // Set empty array for now - feature will work when backend is ready
+        setMedicationHistory([]);
       }
 
       // Fetch user profile

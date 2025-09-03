@@ -2533,6 +2533,21 @@ process.on('SIGINT', () => {
 // Add new medication
 app.post('/api/medications', authenticateToken, async (req, res) => {
   try {
+    // Check if table exists first
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'medications'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      return res.status(503).json({ 
+        error: 'ระบบยาอยู่ระหว่างการติดตั้ง กรุณาลองใหม่อีกครั้ง' 
+      });
+    }
+
     const { 
       medication_name, dosage, frequency, time_schedule, 
       start_date, end_date, condition, reminder_enabled, notes 
@@ -2566,6 +2581,21 @@ app.post('/api/medications', authenticateToken, async (req, res) => {
 // Get user's medications
 app.get('/api/medications', authenticateToken, async (req, res) => {
   try {
+    // Check if table exists first
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'medications'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      return res.status(503).json({ 
+        error: 'ระบบยาอยู่ระหว่างการติดตั้ง กรุณาลองใหม่อีกครั้ง' 
+      });
+    }
+
     const result = await db.query(
       'SELECT * FROM medications WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC',
       [req.user.userId]
@@ -2668,6 +2698,21 @@ app.post('/api/medication-logs', authenticateToken, async (req, res) => {
 // Get medication logs
 app.get('/api/medication-logs', authenticateToken, async (req, res) => {
   try {
+    // Check if table exists first
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'medication_logs'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      return res.status(503).json({ 
+        error: 'ระบบยาอยู่ระหว่างการติดตั้ง กรุณาลองใหม่อีกครั้ง' 
+      });
+    }
+
     const { medication_id, days } = req.query;
     let query = `
       SELECT ml.*, m.medication_name, m.dosage, m.condition
