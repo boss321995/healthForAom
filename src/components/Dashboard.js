@@ -260,7 +260,17 @@ const Dashboard = () => {
         exercise_duration_minutes: behavior.exercise_duration_minutes,
         exercise_frequency: behavior.exercise_frequency,
         stress_level: behavior.stress_level,
-        sleep_hours_per_night: behavior.sleep_hours_per_night
+        sleep_hours_per_night: behavior.sleep_hours_per_night,
+        alcohol_units: behavior.alcohol_units,
+        smoking_cigarettes: behavior.smoking_cigarettes,
+        caffeine_cups: behavior.caffeine_cups,
+        water_glasses: behavior.water_glasses,
+        exercise_type: behavior.exercise_type,
+        exercise_intensity: behavior.exercise_intensity,
+        sleep_quality: behavior.sleep_quality,
+        sleep_bedtime: behavior.sleep_bedtime,
+        sleep_wakeup: behavior.sleep_wakeup,
+        screen_time_hours: behavior.screen_time_hours
       }));
 
       // รวมกับข้อมูลจาก localStorage (ถ้ามี)
@@ -1992,7 +2002,7 @@ const Dashboard = () => {
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="text-blue-900 text-sm font-semibold">
-                            {record.record_type === 'metric' ? '🩺 ค่าตรวจสุขภาพ' : '🏃 พฤติกรรมสุขภาพ'}
+                            {(record.systolic_bp || record.diastolic_bp || record.heart_rate || record.blood_sugar_mg || record.weight_kg || record.height_cm) ? '🩺 ค่าตรวจสุขภาพ' : '🏃 พฤติกรรมสุขภาพ'}
                           </p>
                           <p className="text-blue-700 text-sm mt-1 font-medium">
                             {/* ข้อมูลการตรวจสุขภาพ */}
@@ -2049,12 +2059,15 @@ const Dashboard = () => {
                             {record.stress_level && (
                               <span><br />😰 ความเครียด: {record.stress_level}</span>
                             )}
+                            {record.screen_time_hours && (
+                              <span><br />📱 หน้าจอ: {record.screen_time_hours} ชั่วโมง</span>
+                            )}
                             
                             {/* ถ้าไม่มีข้อมูลสำคัญ */}
                             {!record.systolic_bp && !record.diastolic_bp && !record.heart_rate && 
                              !record.exercise_duration_minutes && !record.sleep_hours_per_night && 
                              !record.weight_kg && !record.blood_sugar_mg && !record.alcohol_units && 
-                             !record.smoking_cigarettes && (
+                             !record.smoking_cigarettes && !record.caffeine_cups && !record.water_glasses && (
                               <span>ข้อมูลพื้นฐาน - พร้อมเพิ่มรายละเอียด</span>
                             )}
                           </p>
