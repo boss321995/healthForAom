@@ -910,8 +910,8 @@ app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
     
     let query = `
       SELECT behavior_id, behavior_date AS record_date,
-             smoking_cigarettes AS cigarettes_per_day,
-             alcohol_units AS alcohol_units_per_week,
+             smoking_cigarettes,
+             alcohol_units,
              exercise_minutes AS exercise_duration_minutes,
              sleep_hours AS sleep_hours_per_night,
              stress_level,
@@ -952,10 +952,10 @@ app.post('/api/health-behaviors', authenticateToken, async (req, res) => {
       date, exercise_type, exercise_duration, exercise_intensity,
       sleep_bedtime, sleep_wakeup, sleep_quality, water_glasses,
       fruits_vegetables, supplements, stress_level, relaxation_minutes, notes,
-      smoking_status, cigarettes_per_day,
-      alcohol_frequency, alcohol_units_per_week,
+      smoking_status, cigarettes_per_day, smoking_cigarettes,
+      alcohol_frequency, alcohol_units_per_week, alcohol_units,
       exercise_frequency, sleep_hours_per_night,
-      diet_quality, water_intake_liters
+      diet_quality, water_intake_liters, caffeine_cups, screen_time_hours
     } = req.body;
 
     console.log('📝 Received health behavior data:', req.body);
@@ -1005,8 +1005,23 @@ app.post('/api/health-behaviors', authenticateToken, async (req, res) => {
     const exerciseMinutes = sanitizeValue(exercise_duration, true) || null;
     const sleepHours = sanitizeValue(calculatedSleepHours);
     const waterIntakeMl = waterLiters ? Math.round(parseFloat(waterLiters) * 1000) : null;
-    const cigarettes = sanitizeValue(cigarettes_per_day, true);
-    const alcoholUnits = sanitizeValue(alcohol_units_per_week, true);
+    
+    // Handle smoking data - accept either field name
+    const cigarettes = sanitizeValue(smoking_cigarettes, true) || sanitizeValue(cigarettes_per_day, true);
+    
+    // Handle alcohol data - accept either field name  
+    const alcoholUnits = sanitizeValue(alcohol_units, true) || sanitizeValue(alcohol_units_per_week, true);
+
+    console.log('📝 Processed behavior data:', {
+      behaviorDate,
+      exerciseMinutes,
+      sleepHours,
+      waterIntakeMl,
+      cigarettes,
+      alcoholUnits,
+      stress_level: sanitizeValue(stress_level),
+      notes: sanitizeValue(notes)
+    });
 
     const insert = await db.query(
       `INSERT INTO health_behavior 
@@ -1453,8 +1468,8 @@ app.get('/api/health-trends', authenticateToken, async (req, res) => {
     // Get health behaviors trends
     const behaviorsTrends = await db.query(
       `SELECT behavior_date as record_date, 
-              AVG(smoking_cigarettes) as avg_cigarettes_per_day, 
-              AVG(alcohol_units) as avg_alcohol_units_per_week, 
+              AVG(smoking_cigarettes) as avg_smoking_cigarettes, 
+              AVG(alcohol_units) as avg_alcohol_units, 
               AVG(exercise_minutes) as avg_exercise_duration_minutes,
               AVG(sleep_hours) as avg_sleep_hours_per_night, 
               AVG(stress_level) as avg_stress_level, 
