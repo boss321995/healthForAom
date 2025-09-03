@@ -9,7 +9,8 @@ async function runMigration() {
 
   try {
     await client.connect();
-    console.log('🔗 Connected to database for migration');
+    console.log('🔗 Connected to database for medication tables migration');
+    console.log('🚀 Starting medication tables migration process...');
     
     // Create medications table
     const medicationsSQL = `
@@ -32,9 +33,10 @@ async function runMigration() {
       );`;
     
     await client.query(medicationsSQL);
-    console.log('✅ Medications table created/verified');
+    console.log('✅ Medications table created successfully');
     
     // Create medication_logs table
+    console.log('📋 Creating medication_logs table...');
     const logsSQL = `
       CREATE TABLE IF NOT EXISTS medication_logs (
           id SERIAL PRIMARY KEY,
@@ -49,14 +51,15 @@ async function runMigration() {
       );`;
     
     await client.query(logsSQL);
-    console.log('✅ Medication logs table created/verified');
+    console.log('✅ Medication logs table created successfully');
     
     // Create indexes for better performance
+    console.log('🔍 Creating indexes for better performance...');
     await client.query('CREATE INDEX IF NOT EXISTS idx_medications_user_id ON medications(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_medications_is_active ON medications(is_active);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_user_id ON medication_logs(user_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_medication_id ON medication_logs(medication_id);');
-    console.log('✅ Indexes created/verified');
+    console.log('✅ All indexes created successfully');
     
     console.log('🎉 Medication tables migration completed successfully!');
     return true;
