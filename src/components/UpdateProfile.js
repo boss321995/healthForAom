@@ -148,7 +148,10 @@ const UpdateProfile = () => {
 
       const headers = { Authorization: `Bearer ${token}` };
       
-  await axios.put('/api/profile', profileForm, { headers });
+      console.log('🚀 Sending profile data:', profileForm);
+      console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
+      
+      await axios.put('/api/profile', profileForm, { headers });
       
       setSubmitMessage({ type: 'success', text: 'อัปเดตโปรไฟล์สำเร็จ!' });
       
@@ -159,9 +162,26 @@ const UpdateProfile = () => {
       
     } catch (error) {
       console.error('Error updating profile:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers
+      });
+      
+      let errorMessage = 'เกิดข้อผิดพลาดในการอัปเดตโปรไฟล์';
+      
+      if (error.response?.status === 500) {
+        errorMessage = 'เซิร์ฟเวอร์มีปัญหา กรุณาลองใหม่อีกครั้ง';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'กรุณาเข้าสู่ระบบใหม่';
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
       setSubmitMessage({ 
         type: 'error', 
-        text: error.response?.data?.error || 'เกิดข้อผิดพลาดในการอัปเดตโปรไฟล์' 
+        text: errorMessage
       });
     } finally {
       setIsSubmitting(false);

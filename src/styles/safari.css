@@ -1,0 +1,113 @@
+/* Safari-specific CSS fixes */
+
+/* Safari button rendering fixes */
+@supports (-webkit-appearance: none) {
+  button {
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0.5rem;
+  }
+  
+  input {
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0.5rem;
+  }
+}
+
+/* Safari backdrop-filter support */
+@supports (backdrop-filter: blur(16px)) {
+  .backdrop-blur-lg {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+/* Safari flexbox fixes */
+.safari-flex-fix {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+
+/* Safari transform fixes */
+.safari-transform-fix {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Safari gradient fixes */
+.safari-gradient-fix {
+  background: -webkit-linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+}
+
+/* Safari scroll fixes */
+.safari-scroll-fix {
+  -webkit-overflow-scrolling: touch;
+  overflow: auto;
+}
+
+/* Safari input focus fixes */
+input:focus {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safari animation performance */
+@media (prefers-reduced-motion: no-preference) {
+  .safari-animate {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+  }
+}
+
+/* Safari safe area support */
+@supports (padding: max(0px)) {
+  .safari-safe-area {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Safari specific hover states */
+@media (hover: hover) {
+  .safari-hover:hover {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+  }
+}
+
+/* Safari loading spinner fix */
+.safari-spinner {
+  -webkit-animation: spin 1s linear infinite;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+/* Safari form validation */
+input:invalid {
+  box-shadow: none; /* Remove Safari default validation styling */
+}
+
+/* Safari text rendering */
+.safari-text-fix {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}

@@ -20,6 +20,84 @@ const Dashboard = () => {
   const [submitMessage, setSubmitMessage] = useState({ type: '', text: '' });
   const [dataHistory, setDataHistory] = useState([]);
 
+  // Helper function to get full name
+  const getFullName = () => {
+    // First try to get full_name field directly
+    if (userProfile?.full_name && userProfile.full_name.trim()) {
+      return userProfile.full_name;
+    }
+    
+    if (healthSummary?.full_name && healthSummary.full_name.trim()) {
+      return healthSummary.full_name;
+    }
+    
+    // Then try to combine first_name and last_name
+    if (userProfile?.first_name && userProfile?.last_name) {
+      return `${userProfile.first_name} ${userProfile.last_name}`;
+    }
+    
+    if (healthSummary?.first_name && healthSummary?.last_name) {
+      return `${healthSummary.first_name} ${healthSummary.last_name}`;
+    }
+    
+    // Try individual names
+    if (userProfile?.first_name || healthSummary?.first_name) {
+      return userProfile?.first_name || healthSummary?.first_name;
+    }
+    
+    if (userProfile?.full_name) {
+      return userProfile.full_name;
+    }
+    
+    // Fallback to user data
+    if (user?.name) {
+      return user.name;
+    }
+    
+    // Final fallback
+    return user?.username || 'ผู้ใช้';
+  };
+
+  // Helper function to get display name for greeting
+  const getGreetingName = () => {
+    const fullName = getFullName();
+    
+    // If it's a fallback username, return as-is
+    if (fullName === user?.username || fullName === 'ผู้ใช้') {
+      return fullName;
+    }
+    
+    // For real names, show first name or full name
+    if (userProfile?.first_name || healthSummary?.first_name) {
+      return userProfile?.first_name || healthSummary?.first_name;
+    }
+    
+    return fullName;
+  };
+
+  // Helper function to get last checkup date from recent metrics
+  const getLastCheckupDate = () => {
+    if (!recentMetrics || recentMetrics.length === 0) {
+      return null;
+    }
+    
+    // หาข้อมูลล่าสุดที่มีความดันหรือชีพจร
+    const latestHealthData = recentMetrics.find(item => 
+      item.systolic_bp || item.diastolic_bp || item.heart_rate || item.blood_sugar_mg
+    );
+    
+    if (latestHealthData) {
+      return latestHealthData.created_at || 
+             latestHealthData.record_date || 
+             latestHealthData.measurement_date;
+    }
+    
+    // ถ้าไม่มีข้อมูลสุขภาพเฉพาะ ใช้ข้อมูลล่าสุดทั้งหมด
+    return recentMetrics[0]?.created_at || 
+           recentMetrics[0]?.record_date || 
+           recentMetrics[0]?.measurement_date;
+  };
+
   // ข้อมูลสถานะระบบ
   const [systemStatus, setSystemStatus] = useState({
     userConnected: false,
@@ -91,12 +169,18 @@ const Dashboard = () => {
     exercise_intensity: '',
     sleep_bedtime: '',
     sleep_wakeup: '',
+    sleep_hours: '',
     sleep_quality: '',
     water_glasses: '',
     fruits_vegetables: '',
     supplements: '',
     stress_level: '',
     relaxation_minutes: '',
+    // เพิ่มปัจจัยเสี่ยง
+    alcohol_units: '',
+    smoking_cigarettes: '',
+    caffeine_cups: '',
+    screen_time_hours: '',
     notes: ''
   });
 
@@ -172,6 +256,8 @@ const Dashboard = () => {
         .slice(0, 100); // เก็บแค่ 100 รายการล่าสุด
 
       setDataHistory(combinedHistory);
+      console.log('📊 Combined data history:', combinedHistory.length, 'items');
+      console.log('📋 Data history sample:', combinedHistory.slice(0, 3));
       
       // อัปเดต recentMetrics ให้รวมข้อมูลจาก behaviors ด้วย แต่แยกประเภทชัดเจน
   const combinedMetrics = [...metrics, ...behaviors]
@@ -708,6 +794,21 @@ const Dashboard = () => {
       if (lifestyleForm.relaxation_minutes && parseInt(lifestyleForm.relaxation_minutes) > 0) {
         lifestyleData.relaxation_minutes = parseInt(lifestyleForm.relaxation_minutes);
       }
+      
+      // เพิ่มปัจจัยเสี่ยง
+      if (lifestyleForm.alcohol_units && parseInt(lifestyleForm.alcohol_units) > 0) {
+        lifestyleData.alcohol_units = parseInt(lifestyleForm.alcohol_units);
+      }
+      if (lifestyleForm.smoking_cigarettes && parseInt(lifestyleForm.smoking_cigarettes) > 0) {
+        lifestyleData.smoking_cigarettes = parseInt(lifestyleForm.smoking_cigarettes);
+      }
+      if (lifestyleForm.caffeine_cups && parseInt(lifestyleForm.caffeine_cups) > 0) {
+        lifestyleData.caffeine_cups = parseInt(lifestyleForm.caffeine_cups);
+      }
+      if (lifestyleForm.screen_time_hours && parseFloat(lifestyleForm.screen_time_hours) > 0) {
+        lifestyleData.screen_time_hours = parseFloat(lifestyleForm.screen_time_hours);
+      }
+      
       if (lifestyleForm.notes) {
         lifestyleData.notes = lifestyleForm.notes;
       }
@@ -735,12 +836,18 @@ const Dashboard = () => {
         exercise_intensity: '',
         sleep_bedtime: '',
         sleep_wakeup: '',
+        sleep_hours: '',
         sleep_quality: '',
         water_glasses: '',
         fruits_vegetables: '',
         supplements: '',
         stress_level: '',
         relaxation_minutes: '',
+        // รีเซ็ตปัจจัยเสี่ยง
+        alcohol_units: '',
+        smoking_cigarettes: '',
+        caffeine_cups: '',
+        screen_time_hours: '',
         notes: ''
       });
 
@@ -1057,6 +1164,68 @@ const Dashboard = () => {
       }
     }
 
+    // Risk factors analysis - วิเคราะห์ปัจจัยเสี่ยงจากข้อมูลล่าสุด
+    const latestLifestyle = recentMetrics.find(record => 
+      record.alcohol_units || record.smoking_cigarettes || record.caffeine_cups || record.screen_time_hours
+    );
+    
+    if (latestLifestyle) {
+      // วิเคราะห์การดื่มเหล้า
+      const alcoholUnits = parseInt(latestLifestyle.alcohol_units);
+      if (alcoholUnits > 0) {
+        if (alcoholUnits > 4) {
+          insights.push(`ดื่มเหล้า ${alcoholUnits} หน่วย/วัน - มากเกินไป เสี่ยงต่อโรคตับและมะเร็ง`);
+          recommendations.lifestyle.push('ลดการดื่มเหล้าลงให้น้อยกว่า 2 หน่วยต่อวัน');
+          recommendations.medical.push('ควรตรวจสุขภาพตับและระบบหัวใจ');
+        } else if (alcoholUnits > 2) {
+          insights.push(`ดื่มเหล้า ${alcoholUnits} หน่วย/วัน - มากกว่าที่แนะนำ`);
+          recommendations.lifestyle.push('ลดการดื่มเหล้าหรือมีวันหยุดดื่ม');
+        }
+      }
+      
+      // วิเคราะห์การสูบบุหรี่
+      const smokingCigs = parseInt(latestLifestyle.smoking_cigarettes);
+      if (smokingCigs > 0) {
+        insights.push(`สูบบุหรี่ ${smokingCigs} มวน/วัน - เสี่ยงต่อโรคปอด หัวใจ และมะเร็ง`);
+        recommendations.lifestyle.push('หยุดสูบบุหรี่โดยสมบูรณ์ หรือลดลงครั้งละ 1-2 มวน');
+        recommendations.medical.push('ควรตรวจปอดและระบบหัวใจทุกปี');
+        if (smokingCigs > 10) {
+          recommendations.medical.push('ควรปรึกษาแพทย์เรื่องการเลิกบุหรี่');
+        }
+      }
+      
+      // วิเคราะห์คาเฟอีน
+      const caffeineCups = parseInt(latestLifestyle.caffeine_cups);
+      if (caffeineCups > 4) {
+        insights.push(`ดื่มคาเฟอีน ${caffeineCups} แก้ว/วัน - มากเกินไป อาจส่งผลต่อการนอน`);
+        recommendations.lifestyle.push('ลดคาเฟอีนลงเหลือ 2-3 แก้วต่อวัน');
+        recommendations.lifestyle.push('หลีกเลี่ยงคาเฟอีนหลัง 14:00 น.');
+      }
+      
+      // วิเคราะห์เวลาหน้าจอ
+      const screenHours = parseFloat(latestLifestyle.screen_time_hours);
+      if (screenHours > 8) {
+        insights.push(`เวลาหน้าจอ ${screenHours} ชั่วโมง/วัน - มากเกินไป เสี่ยงต่อสายตาและการนอน`);
+        recommendations.lifestyle.push('ลดเวลาหน้าจอลงเหลือน้อยกว่า 6 ชั่วโมงต่อวัน');
+        recommendations.lifestyle.push('ใช้กฎ 20-20-20: ทุก 20 นาที มอง 20 ฟุต เป็นเวลา 20 วินาที');
+      }
+    }
+
+    // Sleep analysis
+    const latestSleep = recentMetrics.find(record => record.sleep_hours_per_night);
+    if (latestSleep) {
+      const sleepHours = parseFloat(latestSleep.sleep_hours_per_night);
+      if (sleepHours < 6) {
+        insights.push(`นอน ${sleepHours} ชั่วโมง/คืน - น้อยเกินไป เสี่ยงต่อระบบภูมิคุ้มกัน`);
+        recommendations.lifestyle.push('เพิ่มเวลานอนให้ได้ 7-9 ชั่วโมงต่อคืน');
+        recommendations.lifestyle.push('สร้างกิจวัตรก่อนนอนที่ผ่อนคลาย');
+      } else if (sleepHours > 10) {
+        insights.push(`นอน ${sleepHours} ชั่วโมง/คืน - มากเกินไป อาจมีปัญหาคุณภาพการนอน`);
+        recommendations.lifestyle.push('ปรับเวลานอนให้อยู่ในช่วง 7-9 ชั่วโมง');
+        recommendations.medical.push('ควรตรวจสอบคุณภาพการนอนและ Sleep Apnea');
+      }
+    }
+
     return {
       score: healthScore.score,
       grade: healthScore.grade,
@@ -1087,7 +1256,7 @@ const Dashboard = () => {
                 Health Dashboard
               </h1>
               <p className="text-blue-600 text-sm sm:text-base truncate">
-                สวัสดี, {healthSummary?.first_name || user?.username || 'ผู้ใช้'}!
+                สวัสดี, {getGreetingName()}!
               </p>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
@@ -1096,7 +1265,7 @@ const Dashboard = () => {
                 recentMetrics={recentMetrics} 
               />
               <div className="hidden sm:block text-right">
-                <p className="text-blue-800 font-medium text-sm">{user?.username}</p>
+                <p className="text-blue-800 font-medium text-sm">{getFullName()}</p>
                 <p className="text-blue-600 text-xs">{user?.email}</p>
               </div>
               <button
@@ -1235,20 +1404,35 @@ const Dashboard = () => {
                   <div className="flex-1 min-w-0">
                     <p className="text-blue-600 text-xs sm:text-sm font-medium">ตรวจล่าสุด</p>
                     <p className="text-base sm:text-lg font-bold text-blue-900 truncate">
-                      {healthSummary?.last_checkup 
-                        ? (() => {
-                            try {
-                              const date = new Date(healthSummary.last_checkup);
-                              if (isNaN(date.getTime())) {
-                                return 'รูปแบบวันที่ไม่ถูกต้อง';
-                              }
-                              return date.toLocaleDateString('th-TH');
-                            } catch (error) {
+                      {(() => {
+                        const lastCheckupDate = getLastCheckupDate();
+                        if (lastCheckupDate) {
+                          try {
+                            const date = new Date(lastCheckupDate);
+                            if (isNaN(date.getTime())) {
                               return 'รูปแบบวันที่ไม่ถูกต้อง';
                             }
-                          })()
-                        : 'ยังไม่มีข้อมูล'
-                      }
+                            return date.toLocaleDateString('th-TH');
+                          } catch (error) {
+                            return 'รูปแบบวันที่ไม่ถูกต้อง';
+                          }
+                        }
+                        
+                        // Fallback to healthSummary if available
+                        if (healthSummary?.last_checkup) {
+                          try {
+                            const date = new Date(healthSummary.last_checkup);
+                            if (isNaN(date.getTime())) {
+                              return 'รูปแบบวันที่ไม่ถูกต้อง';
+                            }
+                            return date.toLocaleDateString('th-TH');
+                          } catch (error) {
+                            return 'รูปแบบวันที่ไม่ถูกต้อง';
+                          }
+                        }
+                        
+                        return 'ยังไม่มีข้อมูล';
+                      })()}
                     </p>
                   </div>
                   <div className="text-3xl">📅</div>
@@ -1333,8 +1517,8 @@ const Dashboard = () => {
                 <div className="flex justify-between py-2 border-b border-blue-100">
                   <span className="text-blue-700 font-medium">ชื่อ-นามสกุล:</span>
                   <span className="text-blue-900 font-semibold">
-                    {userProfile?.first_name && userProfile?.last_name 
-                      ? `${userProfile.first_name} ${userProfile.last_name}`
+                    {getFullName() !== user?.username && getFullName() !== 'ผู้ใช้'
+                      ? getFullName()
                       : <span className="text-orange-600 bg-orange-100 px-2 py-1 rounded text-sm">ยังไม่ได้กรอก</span>
                     }
                   </span>
@@ -1442,11 +1626,18 @@ const Dashboard = () => {
                 ) : (
                   <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4 text-center">
                     <div className="text-3xl mb-2">🎯</div>
-                    <p className="text-gray-700 text-sm font-medium">กรอกข้อมูลสุขภาพเพื่อรับคำแนะนำที่เหมาะสม</p>
+                    <p className="text-gray-700 text-sm font-medium mb-2">กรุณากรอกข้อมูลสุขภาพส่วนบุคคล</p>
+                    <p className="text-gray-600 text-xs">เพื่อรับคำแนะนำที่เหมาะสมกับคุณโดยเฉพาะ</p>
+                    <button
+                      onClick={() => setActiveTab('profile')}
+                      className="mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium bg-blue-100 hover:bg-blue-200 px-3 py-1 rounded-lg transition-colors"
+                    >
+                      กรอกข้อมูลโปรไฟล์ →
+                    </button>
                   </div>
                 )}
 
-                {/* Personalized Health Tips */}
+                {/* คำแนะนำสุขภาพส่วนบุคคล */}
                 <div className="space-y-2">
                   <h4 className="text-blue-900 font-semibold text-sm mb-3 border-b border-blue-200 pb-1">
                     {userProfile?.medical_conditions || userProfile?.medications ? 'คำแนะนำเฉพาะคุณ' : 'เคล็ดลับสุขภาพ'}
@@ -1497,16 +1688,68 @@ const Dashboard = () => {
                             {record.record_type === 'metric' ? '🩺 ค่าตรวจสุขภาพ' : '🏃 พฤติกรรมสุขภาพ'}
                           </p>
                           <p className="text-blue-700 text-sm mt-1 font-medium">
-                            {record.systolic_bp && record.diastolic_bp && 
-                              `ความดัน: ${record.systolic_bp}/${record.diastolic_bp} mmHg`
-                            }
-                            {record.heart_rate && ` | ชีพจร: ${record.heart_rate} bpm`}
-                            {record.exercise_duration_minutes && 
-                              `ออกกำลังกาย: ${record.exercise_duration_minutes} นาที`
-                            }
-                            {record.sleep_hours_per_night && 
-                              ` | นอน: ${record.sleep_hours_per_night} ชั่วโมง`
-                            }
+                            {/* ข้อมูลการตรวจสุขภาพ */}
+                            {record.systolic_bp && record.diastolic_bp && (
+                              <span>ความดัน: {record.systolic_bp}/{record.diastolic_bp} mmHg</span>
+                            )}
+                            {record.heart_rate && (
+                              <span>{record.systolic_bp && record.diastolic_bp ? ' | ' : ''}ชีพจร: {record.heart_rate} bpm</span>
+                            )}
+                            {record.blood_sugar_mg && (
+                              <span><br />น้ำตาลในเลือด: {record.blood_sugar_mg} mg/dL</span>
+                            )}
+                            {record.weight_kg && (
+                              <span><br />น้ำหนัก: {record.weight_kg} กก.</span>
+                            )}
+                            
+                            {/* ข้อมูลการออกกำลังกาย */}
+                            {record.exercise_duration_minutes && (
+                              <span><br />🏃 ออกกำลังกาย: {record.exercise_duration_minutes} นาที</span>
+                            )}
+                            {record.exercise_type && (
+                              <span> ({record.exercise_type})</span>
+                            )}
+                            {record.exercise_intensity && (
+                              <span> - ระดับ: {record.exercise_intensity}</span>
+                            )}
+                            
+                            {/* ข้อมูลการนอน */}
+                            {record.sleep_hours_per_night && (
+                              <span><br />😴 การนอน: {record.sleep_hours_per_night} ชั่วโมง</span>
+                            )}
+                            {record.sleep_quality && (
+                              <span> - คุณภาพ: {record.sleep_quality}</span>
+                            )}
+                            {record.sleep_bedtime && record.sleep_wakeup && (
+                              <span> ({record.sleep_bedtime} - {record.sleep_wakeup})</span>
+                            )}
+                            
+                            {/* ปัจจัยเสี่ยง */}
+                            {record.alcohol_units && parseInt(record.alcohol_units) > 0 && (
+                              <span><br />🍺 เหล้า: {record.alcohol_units} หน่วย</span>
+                            )}
+                            {record.smoking_cigarettes && parseInt(record.smoking_cigarettes) > 0 && (
+                              <span><br />🚬 บุหรี่: {record.smoking_cigarettes} มวน</span>
+                            )}
+                            {record.caffeine_cups && parseInt(record.caffeine_cups) > 0 && (
+                              <span><br />☕ คาเฟอีน: {record.caffeine_cups} แก้ว</span>
+                            )}
+                            
+                            {/* ข้อมูลอื่นๆ */}
+                            {record.water_glasses && (
+                              <span><br />💧 ดื่มน้ำ: {record.water_glasses} แก้ว</span>
+                            )}
+                            {record.stress_level && (
+                              <span><br />😰 ความเครียด: {record.stress_level}</span>
+                            )}
+                            
+                            {/* ถ้าไม่มีข้อมูลสำคัญ */}
+                            {!record.systolic_bp && !record.diastolic_bp && !record.heart_rate && 
+                             !record.exercise_duration_minutes && !record.sleep_hours_per_night && 
+                             !record.weight_kg && !record.blood_sugar_mg && !record.alcohol_units && 
+                             !record.smoking_cigarettes && (
+                              <span>ข้อมูลพื้นฐาน - พร้อมเพิ่มรายละเอียด</span>
+                            )}
                           </p>
                         </div>
                         <span className="text-blue-600 text-sm font-medium bg-blue-100 px-2 py-1 rounded">
@@ -2351,6 +2594,89 @@ const Dashboard = () => {
                         className="w-full px-4 py-3 bg-white border-2 border-pink-300 rounded-lg text-pink-900 placeholder-pink-400 focus:outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200"
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* Risk Factors Section */}
+                <div className="bg-orange-50 rounded-lg p-6 border-2 border-orange-200">
+                  <h4 className="text-xl font-bold text-orange-900 mb-4 flex items-center border-b border-orange-200 pb-2">
+                    <span className="mr-2">⚠️</span>
+                    ปัจจัยเสี่ยง
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-orange-800 font-semibold mb-2">
+                        เหล้า/แอลกอฮอล์ (หน่วย)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="20"
+                        name="alcohol_units"
+                        value={lifestyleForm.alcohol_units}
+                        onChange={handleLifestyleChange}
+                        placeholder="จำนวนหน่วยเหล้า"
+                        className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                      />
+                      <p className="text-xs text-orange-600 mt-1">1 หน่วย = เบียร์ 1 แก้ว หรือ ไวน์ 1 แก้วเล็ก</p>
+                    </div>
+                    <div>
+                      <label className="block text-orange-800 font-semibold mb-2">
+                        บุหรี่ (มวน)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        name="smoking_cigarettes"
+                        value={lifestyleForm.smoking_cigarettes}
+                        onChange={handleLifestyleChange}
+                        placeholder="จำนวนมวนบุหรี่"
+                        className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-orange-800 font-semibold mb-2">
+                        คาเฟอีน (แก้ว)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="20"
+                        name="caffeine_cups"
+                        value={lifestyleForm.caffeine_cups}
+                        onChange={handleLifestyleChange}
+                        placeholder="กาแฟ ชา เครื่องดื่มเพื่อสุขภาพ"
+                        className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-orange-800 font-semibold mb-2">
+                        เวลาหน้าจอ (ชั่วโมง)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        name="screen_time_hours"
+                        value={lifestyleForm.screen_time_hours}
+                        onChange={handleLifestyleChange}
+                        placeholder="โทรศัพท์ คอมพิวเตอร์ ทีวี"
+                        className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4 p-3 bg-orange-100 rounded-lg border border-orange-300">
+                    <p className="text-orange-800 text-sm font-medium">
+                      💡 <strong>เหตุผลที่สำคัญ:</strong> ข้อมูลนี้ช่วย AI วิเคราะห์ปัจจัยเสี่ยงและให้คำแนะนำที่เหมาะสม
+                    </p>
+                    <ul className="text-orange-700 text-xs mt-2 list-disc list-inside">
+                      <li>เหล้า: เสี่ยงต่อโรคตับ ความดันสูง มะเร็ง</li>
+                      <li>บุหรี่: เสี่ยงต่อโรคหัวใจ ปอด มะเร็ง</li>
+                      <li>คาเฟอีน: ส่งผลต่อการนอน ความดัน</li>
+                      <li>หน้าจอ: ส่งผลต่อสายตา การนอน ความเครียด</li>
+                    </ul>
                   </div>
                 </div>
 
