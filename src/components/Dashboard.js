@@ -19,6 +19,22 @@ const Dashboard = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState({ type: '', text: '' });
   const [dataHistory, setDataHistory] = useState([]);
+  
+  // Medication tracking states
+  const [medications, setMedications] = useState([]);
+  const [medicationForm, setMedicationForm] = useState({
+    medication_name: '',
+    dosage: '',
+    frequency: '',
+    time_schedule: '',
+    start_date: '',
+    end_date: '',
+    condition: '',
+    reminder_enabled: true,
+    notes: ''
+  });
+  const [medicationHistory, setMedicationHistory] = useState([]);
+  const [reminders, setReminders] = useState([]);
 
   // Helper function to get full name
   const getFullName = () => {
@@ -979,6 +995,179 @@ const Dashboard = () => {
     updateSystemStatus();
   }, [user, loading, healthSummary, userProfile]);
 
+  // Medication Management Functions
+  const addMedication = async (medicationData) => {
+    try {
+      const token = localStorage.getItem('healthToken');
+      const headers = { Authorization: `Bearer ${token}` };
+      
+      const response = await axios.post('/api/medications', medicationData, { headers });
+      
+      // Update local state
+      setMedications(prev => [...prev, response.data]);
+      setSubmitMessage({ type: 'success', text: 'เพิ่มยาสำเร็จ!' });
+      
+      // Setup reminders if enabled
+      if (medicationData.reminder_enabled) {
+        setupMedicationReminder(response.data);
+      }
+      
+      // Reset form
+      setMedicationForm({
+        medication_name: '',
+        dosage: '',
+        frequency: '',
+        time_schedule: '',
+        start_date: '',
+        end_date: '',
+        condition: '',
+        reminder_enabled: true,
+        notes: ''
+      });
+      
+    } catch (error) {
+      console.error('Error adding medication:', error);
+      setSubmitMessage({ type: 'error', text: 'เกิดข้อผิดพลาดในการเพิ่มยา' });
+    }
+  };
+
+  const markMedicationTaken = async (medicationId, takenTime = new Date()) => {
+    try {
+      const token = localStorage.getItem('healthToken');
+      const headers = { Authorization: `Bearer ${token}` };
+      
+      const medicationLog = {
+        medication_id: medicationId,
+        taken_time: takenTime,
+        status: 'taken',
+        notes: ''
+      };
+      
+      await axios.post('/api/medication-logs', medicationLog, { headers });
+      
+      // Update medication history
+      setMedicationHistory(prev => [...prev, {
+        ...medicationLog,
+        id: Date.now(),
+        medication: medications.find(m => m.id === medicationId)
+      }]);
+      
+      setSubmitMessage({ type: 'success', text: 'บันทึกการทานยาสำเร็จ!' });
+      
+    } catch (error) {
+      console.error('Error logging medication:', error);
+      setSubmitMessage({ type: 'error', text: 'เกิดข้อผิดพลาดในการบันทึก' });
+    }
+  };
+
+  const setupMedicationReminder = (medication) => {
+    if (!('Notification' in window)) {
+      console.log('Browser does not support notifications');
+      return;
+    }
+
+    // Request permission for notifications
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    if (Notification.permission === 'granted') {
+      const scheduleNotification = (scheduledTime) => {
+        const now = new Date();
+        const notificationTime = new Date(scheduledTime);
+        const timeDiff = notificationTime.getTime() - now.getTime();
+
+        if (timeDiff > 0) {
+          setTimeout(() => {
+            new Notification(`💊 เวลาทานยา: ${medication.medication_name}`, {
+              body: `ขนาด: ${medication.dosage}\nคำแนะนำ: ${medication.notes || 'ทานตามแพทย์สั่ง'}`,
+              icon: '/favicon.ico',
+              tag: `medication-${medication.id}`,
+              requireInteraction: true
+            });
+          }, timeDiff);
+        }
+      };
+
+      // Setup reminders based on frequency
+      const times = medication.time_schedule.split(',').map(t => t.trim());
+      times.forEach(time => {
+        const [hours, minutes] = time.split(':');
+        const today = new Date();
+        const scheduledTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 
+                                      parseInt(hours), parseInt(minutes));
+        
+        // If time has passed today, schedule for tomorrow
+        if (scheduledTime < new Date()) {
+          scheduledTime.setDate(scheduledTime.getDate() + 1);
+        }
+        
+        scheduleNotification(scheduledTime);
+      });
+    }
+  };
+
+  const getMedicationStatus = (medication) => {
+    if (!medication.start_date) return 'ไม่ระบุ';
+    
+    const startDate = new Date(medication.start_date);
+    const endDate = medication.end_date ? new Date(medication.end_date) : null;
+    const today = new Date();
+    
+    if (today < startDate) return 'ยังไม่ถึงเวลาเริ่ม';
+    if (endDate && today > endDate) return 'หมดระยะเวลา';
+    
+    // Check if taken today
+    const todayLogs = medicationHistory.filter(log => {
+      const logDate = new Date(log.taken_time);
+      return logDate.toDateString() === today.toDateString() && 
+             log.medication_id === medication.id;
+    });
+    
+    const scheduledTimes = medication.time_schedule.split(',').length;
+    const takenToday = todayLogs.length;
+    
+    if (takenToday >= scheduledTimes) return 'ทานครบแล้ววันนี้';
+    if (takenToday > 0) return `ทานแล้ว ${takenToday}/${scheduledTimes} ครั้ง`;
+    return 'ยังไม่ทาน';
+  };
+
+  const getConditionMedications = (condition) => {
+    const conditionMeds = {
+      'ความดันสูง': [
+        { name: 'Amlodipine', dosage: '5-10 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-blue-100 text-blue-800' },
+        { name: 'Losartan', dosage: '50-100 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-blue-100 text-blue-800' },
+        { name: 'Atenolol', dosage: '25-50 mg', frequency: 'วันละ 1-2 ครั้ง', time: '08:00,20:00', color: 'bg-blue-100 text-blue-800' }
+      ],
+      'เบาหวาน': [
+        { name: 'Metformin', dosage: '500-1000 mg', frequency: 'วันละ 2 ครั้ง', time: '08:00,20:00', color: 'bg-green-100 text-green-800' },
+        { name: 'Glipizide', dosage: '5-10 mg', frequency: 'วันละ 1-2 ครั้ง', time: '08:00,20:00', color: 'bg-green-100 text-green-800' },
+        { name: 'Insulin', dosage: 'ตามแพทย์กำหนด', frequency: 'ก่อนอาหาร', time: '07:30,12:30,18:30', color: 'bg-green-100 text-green-800' }
+      ],
+      'วัณโรค': [
+        { name: 'Isoniazid (H)', dosage: '300 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-red-100 text-red-800' },
+        { name: 'Rifampin (R)', dosage: '600 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-red-100 text-red-800' },
+        { name: 'Ethambutol (E)', dosage: '1200 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-red-100 text-red-800' },
+        { name: 'Pyrazinamide (Z)', dosage: '1500 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-red-100 text-red-800' }
+      ],
+      'โรคหัวใจ': [
+        { name: 'Aspirin', dosage: '81-100 mg', frequency: 'วันละ 1 ครั้ง', time: '20:00', color: 'bg-purple-100 text-purple-800' },
+        { name: 'Simvastatin', dosage: '20-40 mg', frequency: 'วันละ 1 ครั้ง', time: '20:00', color: 'bg-purple-100 text-purple-800' },
+        { name: 'Clopidogrel', dosage: '75 mg', frequency: 'วันละ 1 ครั้ง', time: '08:00', color: 'bg-purple-100 text-purple-800' }
+      ]
+    };
+    
+    return conditionMeds[condition] || [];
+  };
+
+  const handleMedicationInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setMedicationForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
   // Calculate comprehensive health score
   const calculateHealthScore = () => {
     if (!userProfile || !recentMetrics || recentMetrics.length === 0) {
@@ -1598,6 +1787,18 @@ const Dashboard = () => {
                     <div className="text-4xl mb-3 group-hover:scale-110 transition-transform duration-300">👤</div>
                     <h4 className="text-rose-800 font-bold mb-2">อัปเดตโปรไฟล์</h4>
                     <p className="text-rose-700 text-sm font-medium">ข้อมูลส่วนตัวและการติดต่อ</p>
+                  </div>
+                </button>
+
+                {/* Medication Tracking Card */}
+                <button 
+                  onClick={() => setActiveTab('medications')}
+                  className="bg-gradient-to-br from-amber-100 to-orange-100 hover:from-amber-200 hover:to-orange-200 rounded-lg p-6 border-2 border-amber-300 shadow-lg transition-all duration-300 group"
+                >
+                  <div className="text-center">
+                    <div className="text-4xl mb-3 group-hover:scale-110 transition-transform duration-300">💊</div>
+                    <h4 className="text-amber-800 font-bold mb-2">ติดตามยา</h4>
+                    <p className="text-amber-700 text-sm font-medium">แจ้งเตือน, บันทึกการทาน</p>
                   </div>
                 </button>
               </div>
@@ -2712,7 +2913,7 @@ const Dashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-orange-800 font-semibold mb-2">
-                        เหล้า/แอลกอฮอล์ (หน่วย)
+                        แอลกอฮอล์ (หน่วย)
                       </label>
                       <input
                         type="number"
@@ -3092,6 +3293,86 @@ const Dashboard = () => {
                   </div>
                 </div>
 
+                {/* Risk Behaviors Section */}
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+                  <h4 className="text-lg font-bold text-red-900 mb-4 flex items-center">
+                    <span className="mr-2">⚠️</span>
+                    พฤติกรรมเสี่ยง
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-red-800 font-medium mb-2">การดื่มเหล้า (หน่วย/สัปดาห์)</label>
+                      <input
+                        type="number"
+                        name="alcohol_units"
+                        value={lifestyleForm.alcohol_units}
+                        onChange={handleLifestyleInputChange}
+                        min="0"
+                        max="50"
+                        className="w-full px-4 py-2 bg-white border border-red-300 rounded-lg text-red-900 focus:outline-none focus:border-red-500"
+                        placeholder="เช่น 0 (1 หน่วย = เบียร์ 1 กระป๋อง)"
+                      />
+                      <p className="text-xs text-red-600 mt-1">
+                        1 หน่วย = เบียร์ 1 กระป๋อง หรือ ไวน์ 1 แก้ว หรือ เหล้า 1 ช็อต
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-medium mb-2">การสูบบุหรี่ (มวน/วัน)</label>
+                      <input
+                        type="number"
+                        name="smoking_cigarettes"
+                        value={lifestyleForm.smoking_cigarettes}
+                        onChange={handleLifestyleInputChange}
+                        min="0"
+                        max="100"
+                        className="w-full px-4 py-2 bg-white border border-red-300 rounded-lg text-red-900 focus:outline-none focus:border-red-500"
+                        placeholder="เช่น 0 (ไม่สูบ)"
+                      />
+                      <p className="text-xs text-red-600 mt-1">
+                        ใส่ 0 หากไม่สูบบุหรี่ หรือจำนวนมวนที่สูบต่อวัน
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-red-800 font-medium mb-2">คาเฟอีน (แก้ว/วัน)</label>
+                      <input
+                        type="number"
+                        name="caffeine_cups"
+                        value={lifestyleForm.caffeine_cups}
+                        onChange={handleLifestyleInputChange}
+                        min="0"
+                        max="20"
+                        className="w-full px-4 py-2 bg-white border border-red-300 rounded-lg text-red-900 focus:outline-none focus:border-red-500"
+                        placeholder="เช่น 2 (กาแฟ, ชา, โซดา)"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-red-800 font-medium mb-2">เวลาหน้าจอ (ชั่วโมง/วัน)</label>
+                      <input
+                        type="number"
+                        name="screen_time_hours"
+                        value={lifestyleForm.screen_time_hours}
+                        onChange={handleLifestyleInputChange}
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        className="w-full px-4 py-2 bg-white border border-red-300 rounded-lg text-red-900 focus:outline-none focus:border-red-500"
+                        placeholder="เช่น 8 (มือถือ, คอม, ทีวี)"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded">
+                    <h5 className="text-red-900 font-semibold mb-2">คำแนะนำ:</h5>
+                    <ul className="text-red-800 text-sm space-y-1">
+                      <li>• เหล้า: ผู้ชาย ≤14 หน่วย/สัปดาห์, ผู้หญิง ≤7 หน่วย/สัปดาห์</li>
+                      <li>• บุหรี่: ไม่สูบเลยจะดีที่สุด - เสี่ยงโรคมะเร็ง หัวใจ ปอด</li>
+                      <li>• คาเฟอีน: ≤400mg/วัน (ประมาณ 4 แก้วกาแฟ)</li>
+                      <li>• หน้าจอ: หยุดพัก 20 นาที ทุก 2 ชั่วโมง</li>
+                    </ul>
+                  </div>
+                </div>
+
                 {/* Notes Section */}
                 <div>
                   <label className="block text-green-900 font-semibold mb-2">
@@ -3159,6 +3440,386 @@ const Dashboard = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Medication Tracking Tab */}
+        {activeTab === 'medications' && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-amber-300 shadow-lg">
+              <h2 className="text-2xl font-bold text-amber-900 mb-4 flex items-center">
+                <span className="mr-3">💊</span>
+                ระบบติดตามยา
+              </h2>
+              <p className="text-amber-700">
+                จัดการการทานยา ตั้งเวลาแจ้งเตือน และติดตามประวัติการทานยาของคุณ
+              </p>
+            </div>
+
+            {/* Quick Status */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {medications.filter(m => getMedicationStatus(m) === 'ทานครบแล้ววันนี้').length}
+                  </div>
+                  <div className="text-green-700 text-sm">ทานครบวันนี้</div>
+                </div>
+              </div>
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-amber-600">
+                    {medications.filter(m => getMedicationStatus(m).includes('ยังไม่ทาน')).length}
+                  </div>
+                  <div className="text-amber-700 text-sm">รอทาน</div>
+                </div>
+              </div>
+              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{medications.length}</div>
+                  <div className="text-blue-700 text-sm">ยาทั้งหมด</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Today's Medications */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
+              <h3 className="text-xl font-bold text-blue-900 mb-4 flex items-center">
+                <span className="mr-2">📅</span>
+                ยาที่ต้องทานวันนี้
+              </h3>
+              
+              {medications.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-6xl mb-4">💊</div>
+                  <p className="text-gray-600 mb-4">ยังไม่มีการเพิ่มยา</p>
+                  <p className="text-gray-500 text-sm">เพิ่มยาในส่วนด้านล่างเพื่อเริ่มติดตาม</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {medications.map((medication, index) => {
+                    const status = getMedicationStatus(medication);
+                    const isCompleted = status === 'ทานครบแล้ววันนี้';
+                    const isPending = status.includes('ยังไม่ทาน');
+                    
+                    return (
+                      <div key={index} className={`
+                        border-2 rounded-lg p-4 transition-all duration-300
+                        ${isCompleted ? 'bg-green-50 border-green-300' : 
+                          isPending ? 'bg-amber-50 border-amber-300' : 
+                          'bg-gray-50 border-gray-300'}
+                      `}>
+                        <div className="flex justify-between items-center">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3">
+                              <h4 className="font-bold text-lg">{medication.medication_name}</h4>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                medication.condition === 'ความดันสูง' ? 'bg-blue-100 text-blue-800' :
+                                medication.condition === 'เบาหวาน' ? 'bg-green-100 text-green-800' :
+                                medication.condition === 'วัณโรค' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {medication.condition}
+                              </span>
+                            </div>
+                            <p className="text-gray-600 text-sm mt-1">
+                              ขนาด: {medication.dosage} | เวลา: {medication.time_schedule}
+                            </p>
+                            <p className={`text-sm font-medium mt-2 ${
+                              isCompleted ? 'text-green-600' :
+                              isPending ? 'text-amber-600' :
+                              'text-gray-600'
+                            }`}>
+                              สถานะ: {status}
+                            </p>
+                          </div>
+                          
+                          <div className="flex space-x-2">
+                            {isPending && (
+                              <button
+                                onClick={() => markMedicationTaken(medication.id)}
+                                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                              >
+                                ✓ ทานแล้ว
+                              </button>
+                            )}
+                            {isCompleted && (
+                              <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm font-medium">
+                                ✓ เสร็จแล้ว
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {medication.notes && (
+                          <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                            <strong>หมายเหตุ:</strong> {medication.notes}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Add New Medication */}
+            <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-green-300 shadow-lg">
+              <h3 className="text-xl font-bold text-green-900 mb-4 flex items-center">
+                <span className="mr-2">➕</span>
+                เพิ่มยาใหม่
+              </h3>
+              
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                addMedication(medicationForm);
+              }} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">ชื่อยา *</label>
+                    <input
+                      type="text"
+                      name="medication_name"
+                      value={medicationForm.medication_name}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                      placeholder="เช่น Amlodipine"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">ขนาดยา *</label>
+                    <input
+                      type="text"
+                      name="dosage"
+                      value={medicationForm.dosage}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                      placeholder="เช่น 5 mg"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">โรคที่รักษา</label>
+                    <select
+                      name="condition"
+                      value={medicationForm.condition}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                    >
+                      <option value="">เลือกโรค</option>
+                      <option value="ความดันสูง">ความดันสูง</option>
+                      <option value="เบาหวาน">เบาหวาน</option>
+                      <option value="วัณโรค">วัณโรค</option>
+                      <option value="โรคหัวใจ">โรคหัวใจ</option>
+                      <option value="อื่นๆ">อื่นๆ</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">ความถี่ *</label>
+                    <select
+                      name="frequency"
+                      value={medicationForm.frequency}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                      required
+                    >
+                      <option value="">เลือกความถี่</option>
+                      <option value="วันละ 1 ครั้ง">วันละ 1 ครั้ง</option>
+                      <option value="วันละ 2 ครั้ง">วันละ 2 ครั้ง</option>
+                      <option value="วันละ 3 ครั้ง">วันละ 3 ครั้ง</option>
+                      <option value="วันละ 4 ครั้ง">วันละ 4 ครั้ง</option>
+                      <option value="สัปดาห์ละ 3 ครั้ง">สัปดาห์ละ 3 ครั้ง (วัณโรค)</option>
+                      <option value="เมื่อจำเป็น">เมื่อจำเป็น</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-green-800 font-medium mb-2">เวลาทานยา *</label>
+                  <input
+                    type="text"
+                    name="time_schedule"
+                    value={medicationForm.time_schedule}
+                    onChange={handleMedicationInputChange}
+                    className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                    placeholder="เช่น 08:00 หรือ 08:00,20:00 (คั่นด้วยจุลภาค)"
+                    required
+                  />
+                  <p className="text-green-600 text-xs mt-1">
+                    ใส่เวลาในรูปแบบ 24 ชั่วโมง คั่นด้วยจุลภาคหากมีหลายเวลา
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">วันที่เริ่มทาน</label>
+                    <input
+                      type="date"
+                      name="start_date"
+                      value={medicationForm.start_date}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-green-800 font-medium mb-2">วันที่หยุดทาน (ถ้ามี)</label>
+                    <input
+                      type="date"
+                      name="end_date"
+                      value={medicationForm.end_date}
+                      onChange={handleMedicationInputChange}
+                      className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                    />
+                    <p className="text-green-600 text-xs mt-1">
+                      สำหรับยาที่มีระยะเวลาจำกัด เช่น ยาวัณโรค (6-8 เดือน)
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-green-800 font-medium mb-2">หมายเหตุ</label>
+                  <textarea
+                    name="notes"
+                    value={medicationForm.notes}
+                    onChange={handleMedicationInputChange}
+                    rows="3"
+                    className="w-full px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:border-green-500"
+                    placeholder="เช่น ทานหลังอาหาร, หลีกเลี่ยงแอลกอฮอล์, ผลข้างเคียงที่ควรระวัง"
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    name="reminder_enabled"
+                    checked={medicationForm.reminder_enabled}
+                    onChange={handleMedicationInputChange}
+                    className="mr-2"
+                  />
+                  <label className="text-green-800 font-medium">เปิดแจ้งเตือน</label>
+                </div>
+
+                <div className="flex space-x-4">
+                  <button
+                    type="submit"
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    เพิ่มยา
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMedicationForm({
+                      medication_name: '',
+                      dosage: '',
+                      frequency: '',
+                      time_schedule: '',
+                      start_date: '',
+                      end_date: '',
+                      condition: '',
+                      reminder_enabled: true,
+                      notes: ''
+                    })}
+                    className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 rounded-lg font-medium transition-colors"
+                  >
+                    เริ่มใหม่
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Medication Templates */}
+            {medicationForm.condition && (
+              <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-blue-300 shadow-lg">
+                <h3 className="text-xl font-bold text-blue-900 mb-4 flex items-center">
+                  <span className="mr-2">📋</span>
+                  ยาแนะนำสำหรับ{medicationForm.condition}
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {getConditionMedications(medicationForm.condition).map((med, index) => (
+                    <div key={index} className={`border-2 rounded-lg p-3 cursor-pointer hover:bg-blue-50 transition-colors ${med.color}`}
+                         onClick={() => setMedicationForm(prev => ({
+                           ...prev,
+                           medication_name: med.name,
+                           dosage: med.dosage,
+                           frequency: med.frequency,
+                           time_schedule: med.time
+                         }))}>
+                      <h4 className="font-bold">{med.name}</h4>
+                      <p className="text-sm">ขนาด: {med.dosage}</p>
+                      <p className="text-sm">ความถี่: {med.frequency}</p>
+                      <p className="text-sm">เวลา: {med.time}</p>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded">
+                  <h5 className="text-amber-900 font-semibold mb-2">คำแนะนำเฉพาะโรค:</h5>
+                  {medicationForm.condition === 'วัณโรค' && (
+                    <ul className="text-amber-800 text-sm space-y-1">
+                      <li>• ทานยาต่อเนื่อง 6-8 เดือน ห้ามหยุดกลางคัน</li>
+                      <li>• ทานตอนท้องว่าง (ก่อนอาหาร 1 ชั่วโมง)</li>
+                      <li>• ตรวจติดตามที่โรงพยาบาลทุกเดือน</li>
+                      <li>• หลีกเลี่ยงแอลกอฮอล์ เสี่ยงทำลายตับ</li>
+                    </ul>
+                  )}
+                  {medicationForm.condition === 'เบาหวาน' && (
+                    <ul className="text-amber-800 text-sm space-y-1">
+                      <li>• ทานพร้อมหรือหลังอาหาร ป้องกันท้องเสีย</li>
+                      <li>• ติดตามน้ำตาลในเลือดเป็นประจำ</li>
+                      <li>• หากลืมทาน ให้ทานทันทีที่นึกได้ (ถ้าไม่ใกล้มื้อต่อไป)</li>
+                    </ul>
+                  )}
+                  {medicationForm.condition === 'ความดันสูง' && (
+                    <ul className="text-amber-800 text-sm space-y-1">
+                      <li>• ทานเวลาเดิมทุกวัน เพื่อความดันคงที่</li>
+                      <li>• วัดความดันเป็นประจำ บันทึกผล</li>
+                      <li>• ระวังอาการวิงเวียนเมื่อลุกขึ้นยืน</li>
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Medication History */}
+            {medicationHistory.length > 0 && (
+              <div className="bg-white/95 backdrop-blur-lg rounded-lg p-6 border-2 border-purple-300 shadow-lg">
+                <h3 className="text-xl font-bold text-purple-900 mb-4 flex items-center">
+                  <span className="mr-2">📊</span>
+                  ประวัติการทานยา
+                </h3>
+                
+                <div className="space-y-2">
+                  {medicationHistory.slice(0, 10).map((log, index) => (
+                    <div key={index} className="flex justify-between items-center p-3 bg-purple-50 border border-purple-200 rounded">
+                      <div>
+                        <span className="font-medium">{log.medication?.medication_name}</span>
+                        <span className="text-purple-600 text-sm ml-2">{log.medication?.dosage}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-purple-700">
+                          {new Date(log.taken_time).toLocaleDateString('th-TH')}
+                        </div>
+                        <div className="text-xs text-purple-600">
+                          {new Date(log.taken_time).toLocaleTimeString('th-TH', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

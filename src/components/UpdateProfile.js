@@ -58,10 +58,8 @@ const UpdateProfile = () => {
       
       console.log('🔍 Fetching profile with token:', token ? `${token.substring(0, 20)}...` : 'No token');
       
-      // Use full API URL for better compatibility
-      const apiUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://healthforaom.onrender.com/api/users/profile'
-        : 'http://localhost:5000/api/users/profile';
+      // Use relative API URL to fix CORS issue
+      const apiUrl = '/api/users/profile';
         
       const response = await axios.get(apiUrl, { 
         headers,
@@ -170,10 +168,8 @@ const UpdateProfile = () => {
       console.log('🚀 Sending profile data:', profileForm);
       console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
       
-      // Use full API URL for better compatibility
-      const apiUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://healthforaom.onrender.com/api/profile'
-        : 'http://localhost:5000/api/profile';
+      // Use relative API URL to fix CORS issue
+      const apiUrl = '/api/profile';
         
       const response = await axios.put(apiUrl, profileForm, { 
         headers,
