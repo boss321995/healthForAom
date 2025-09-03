@@ -12,46 +12,88 @@ async function runMigration() {
     console.log('🔗 Connected to database for medication tables migration');
     console.log('🚀 Starting medication tables migration process...');
     
-    // Create medications table
-    const medicationsSQL = `
-      CREATE TABLE IF NOT EXISTS medications (
-          id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          medication_name VARCHAR(255) NOT NULL,
-          dosage VARCHAR(100) NOT NULL,
-          frequency VARCHAR(100) NOT NULL,
-          time_schedule VARCHAR(255) NOT NULL,
-          start_date DATE,
-          end_date DATE,
-          condition VARCHAR(100),
-          reminder_enabled BOOLEAN DEFAULT true,
-          notes TEXT,
-          is_active BOOLEAN DEFAULT true,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-      );`;
+    // Check if users table exists first
+    const usersExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+      );
+    `);
     
-    await client.query(medicationsSQL);
-    console.log('✅ Medications table created successfully');
+    if (!usersExists.rows[0].exists) {
+      console.log('❌ Users table not found - skipping medication migration');
+      return false;
+    }
+    console.log('✅ Users table verified');
     
-    // Create medication_logs table
-    console.log('📋 Creating medication_logs table...');
-    const logsSQL = `
-      CREATE TABLE IF NOT EXISTS medication_logs (
-          id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          medication_id INTEGER NOT NULL,
-          taken_time TIMESTAMP NOT NULL,
-          status VARCHAR(50) DEFAULT 'taken',
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-          FOREIGN KEY (medication_id) REFERENCES medications(id) ON DELETE CASCADE
-      );`;
+    // Check if medications table exists
+    const medicationsExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'medications'
+      );
+    `);
     
-    await client.query(logsSQL);
-    console.log('✅ Medication logs table created successfully');
+    if (!medicationsExists.rows[0].exists) {
+      console.log('📋 Creating medications table...');
+      // Create medications table
+      const medicationsSQL = `
+        CREATE TABLE medications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            medication_name VARCHAR(255) NOT NULL,
+            dosage VARCHAR(100) NOT NULL,
+            frequency VARCHAR(100) NOT NULL,
+            time_schedule VARCHAR(255) NOT NULL,
+            start_date DATE,
+            end_date DATE,
+            condition VARCHAR(100),
+            reminder_enabled BOOLEAN DEFAULT true,
+            notes TEXT,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );`;
+      
+      await client.query(medicationsSQL);
+      console.log('✅ Medications table created successfully');
+    } else {
+      console.log('✅ Medications table already exists');
+    }
+    
+    // Check if medication_logs table exists
+    const logsExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'medication_logs'
+      );
+    `);
+    
+    if (!logsExists.rows[0].exists) {
+      console.log('📋 Creating medication_logs table...');
+      // Create medication_logs table
+      const logsSQL = `
+        CREATE TABLE medication_logs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            medication_id INTEGER NOT NULL,
+            taken_time TIMESTAMP NOT NULL,
+            status VARCHAR(50) DEFAULT 'taken',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (medication_id) REFERENCES medications(id) ON DELETE CASCADE
+        );`;
+      
+      await client.query(logsSQL);
+      console.log('✅ Medication logs table created successfully');
+    } else {
+      console.log('✅ Medication logs table already exists');
+    }
     
     // Create indexes for better performance
     console.log('🔍 Creating indexes for better performance...');

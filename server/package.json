@@ -1,16 +1,16 @@
 {
   "name": "health-management-server",
   "version": "1.0.0",
-  "type": "module",
   "description": "Backend server for health management system",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node index-lite.js",
     "dev": "nodemon index.js",
     "build": "echo 'No build step required for Node.js server'",
-    "prod": "NODE_ENV=production node index.js",
+    "prod": "NODE_ENV=production node index-lite.js",
     "test": "echo 'Tests not implemented yet'",
     "migrate": "node migrate-medications.js",
+    "force-migrate": "node force-migration.js",
     "postinstall": "echo '🔧 Building frontend...' && cd .. && npm install --include=dev && npm run build && echo '✅ Frontend built successfully'"
   },
   "dependencies": {
