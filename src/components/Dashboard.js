@@ -348,6 +348,24 @@ const Dashboard = () => {
         console.error('Error fetching health metrics:', error);
       }
 
+      // Fetch medications
+      try {
+        const medicationsResponse = await axios.get('/api/medications', { headers });
+        setMedications(medicationsResponse.data || []);
+        console.log('✅ Medications loaded:', medicationsResponse.data?.length || 0);
+      } catch (error) {
+        console.error('Error fetching medications:', error);
+      }
+
+      // Fetch medication history
+      try {
+        const medicationLogsResponse = await axios.get('/api/medication-logs', { headers });
+        setMedicationHistory(medicationLogsResponse.data || []);
+        console.log('✅ Medication history loaded:', medicationLogsResponse.data?.length || 0);
+      } catch (error) {
+        console.error('Error fetching medication history:', error);
+      }
+
       // Fetch user profile
       try {
   const profileResponse = await axios.get('/api/profile', { headers });

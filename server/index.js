@@ -2707,6 +2707,15 @@ async function startServer() {
     
     await initDatabase();
     
+    // Run medication tables migration
+    try {
+      const runMedicationMigration = require('./migrate-medications');
+      await runMedicationMigration();
+      console.log('🏥 Medication tables migration completed');
+    } catch (migrationError) {
+      console.error('⚠️ Medication migration failed, but continuing:', migrationError.message);
+    }
+    
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Health Management API running on port ${PORT}`);
       console.log(`📊 API Endpoint: http://localhost:${PORT}/api`);

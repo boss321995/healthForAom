@@ -10,6 +10,7 @@
     "build": "echo 'No build step required for Node.js server'",
     "prod": "NODE_ENV=production node index.js",
     "test": "echo 'Tests not implemented yet'",
+    "migrate": "node migrate-medications.js",
     "postinstall": "echo '🔧 Building frontend...' && cd .. && npm install --include=dev && npm run build && echo '✅ Frontend built successfully'"
   },
   "dependencies": {
