@@ -29,23 +29,35 @@ const UpdateProfile = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('healthToken');
-      if (!token) return;
+      
+      console.log('🔍 Fetching profile...');
+      console.log('Token exists:', !!token);
+      console.log('Token type:', token ? (token.startsWith('mock-') ? 'MOCK' : 'REAL') : 'NONE');
+      
+      if (!token) {
+        console.log('❌ No token found');
+        setLoading(false);
+        return;
+      }
 
       // Check if it's a mock token - don't send to backend
       if (token.startsWith('mock-jwt-token-')) {
         console.log('🎭 Mock token detected - using mock profile data');
         const mockUser = JSON.parse(localStorage.getItem('healthUser') || '{}');
+        console.log('Mock user data:', mockUser);
+        
+        const mockProfile = mockUser.profile || {};
         setProfileForm({
-          full_name: mockUser.username || '',
-          date_of_birth: '',
-          gender: '',
-          height_cm: '',
-          blood_group: '',
-          phone: '',
-          emergency_contact: '',
-          emergency_phone: '',
-          medical_conditions: '',
-          medications: ''
+          full_name: mockProfile.full_name || mockUser.username || '',
+          date_of_birth: mockProfile.date_of_birth || '',
+          gender: mockProfile.gender || '',
+          height_cm: mockProfile.height_cm || '',
+          blood_group: mockProfile.blood_group || '',
+          phone: mockProfile.phone || '',
+          emergency_contact: mockProfile.emergency_contact || '',
+          emergency_phone: mockProfile.emergency_phone || '',
+          medical_conditions: mockProfile.medical_conditions || '',
+          medications: mockProfile.medications || ''
         });
         setLoading(false);
         return;
@@ -68,23 +80,41 @@ const UpdateProfile = () => {
       
       console.log('📊 Profile data received:', response.data);
       
-      if (response.data.profile_completed) {
+      // Backend returns { user: {}, profile: {} }
+      const profileData = response.data.profile;
+      
+      if (profileData) {
         setProfileForm({
-          full_name: response.data.full_name || '',
-          date_of_birth: response.data.date_of_birth ? response.data.date_of_birth.split('T')[0] : '',
-          gender: response.data.gender || '',
-          height_cm: response.data.height_cm || '',
-          blood_group: response.data.blood_group || '',
-          phone: response.data.phone || '',
-          emergency_contact: response.data.emergency_contact || '',
-          emergency_phone: response.data.emergency_phone || '',
-          medical_conditions: response.data.medical_conditions || '',
-          medications: response.data.medications || ''
+          full_name: profileData.full_name || '',
+          date_of_birth: profileData.date_of_birth ? profileData.date_of_birth.split('T')[0] : '',
+          gender: profileData.gender || '',
+          height_cm: profileData.height_cm || '',
+          blood_group: profileData.blood_group || '',
+          phone: profileData.phone || '',
+          emergency_contact: profileData.emergency_contact || '',
+          emergency_phone: profileData.emergency_phone || '',
+          medical_conditions: profileData.medical_conditions || '',
+          medications: profileData.medications || ''
         });
+      } else {
+        // No profile data exists yet - keep empty form
+        console.log('No profile data found - showing empty form');
       }
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      setSubmitMessage({ type: 'error', text: 'ไม่สามารถโหลดข้อมูลโปรไฟล์ได้' });
+      console.error('❌ Error fetching profile:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      if (error.response?.status === 401) {
+        setSubmitMessage({ type: 'error', text: 'กรุณาเข้าสู่ระบบใหม่' });
+      } else if (error.response?.status === 404) {
+        setSubmitMessage({ type: 'info', text: 'ยังไม่มีข้อมูลโปรไฟล์ กรุณากรอกข้อมูลใหม่' });
+      } else {
+        setSubmitMessage({ type: 'error', text: 'ไม่สามารถโหลดข้อมูลโปรไฟล์ได้' });
+      }
     } finally {
       setLoading(false);
     }
@@ -168,8 +198,8 @@ const UpdateProfile = () => {
       console.log('🚀 Sending profile data:', profileForm);
       console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
       
-      // Use relative API URL to fix CORS issue
-      const apiUrl = '/api/profile';
+      // Use same API URL as fetch for consistency
+      const apiUrl = '/api/users/profile';
         
       const response = await axios.put(apiUrl, profileForm, { 
         headers,
@@ -243,6 +273,15 @@ const UpdateProfile = () => {
           <p className="text-gray-600 text-lg">
             กรอกข้อมูลส่วนตัวเพื่อให้ระบบแสดงผลได้อย่างครบถ้วน
           </p>
+          {/* Debug info */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-left text-sm">
+              <strong>Debug Info:</strong>
+              <pre className="mt-2 text-xs">
+                {JSON.stringify(profileForm, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
 
         {/* Submit Message */}
