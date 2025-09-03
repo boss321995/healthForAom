@@ -2514,6 +2514,173 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// Medication Management APIs
+// Add new medication
+app.post('/api/medications', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      medication_name, dosage, frequency, time_schedule, 
+      start_date, end_date, condition, reminder_enabled, notes 
+    } = req.body;
+
+    if (!medication_name || !dosage || !frequency || !time_schedule) {
+      return res.status(400).json({ 
+        error: 'กรุณากรอกข้อมูลที่จำเป็น: ชื่อยา, ขนาด, ความถี่, และเวลา' 
+      });
+    }
+
+    const result = await db.query(
+      `INSERT INTO medications (
+        user_id, medication_name, dosage, frequency, time_schedule,
+        start_date, end_date, condition, reminder_enabled, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [
+        req.user.userId, medication_name, dosage, frequency, time_schedule,
+        start_date || null, end_date || null, condition || null, 
+        reminder_enabled !== false, notes || null
+      ]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error adding medication:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการเพิ่มยา' });
+  }
+});
+
+// Get user's medications
+app.get('/api/medications', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM medications WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC',
+      [req.user.userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching medications:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลยา' });
+  }
+});
+
+// Update medication
+app.put('/api/medications/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      medication_name, dosage, frequency, time_schedule, 
+      start_date, end_date, condition, reminder_enabled, notes, is_active 
+    } = req.body;
+
+    const result = await db.query(
+      `UPDATE medications SET 
+        medication_name = $1, dosage = $2, frequency = $3, time_schedule = $4,
+        start_date = $5, end_date = $6, condition = $7, reminder_enabled = $8, 
+        notes = $9, is_active = $10, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $11 AND user_id = $12 RETURNING *`,
+      [
+        medication_name, dosage, frequency, time_schedule,
+        start_date, end_date, condition, reminder_enabled, notes, is_active,
+        id, req.user.userId
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบยาที่ต้องการอัปเดต' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating medication:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการอัปเดตยา' });
+  }
+});
+
+// Delete medication (soft delete)
+app.delete('/api/medications/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await db.query(
+      'UPDATE medications SET is_active = false WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, req.user.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบยาที่ต้องการลบ' });
+    }
+
+    res.json({ message: 'ลบยาสำเร็จ' });
+  } catch (error) {
+    console.error('Error deleting medication:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบยา' });
+  }
+});
+
+// Add medication log (when taken)
+app.post('/api/medication-logs', authenticateToken, async (req, res) => {
+  try {
+    const { medication_id, taken_time, status, notes } = req.body;
+
+    if (!medication_id || !taken_time) {
+      return res.status(400).json({ 
+        error: 'กรุณากรอกข้อมูลที่จำเป็น: medication_id และ taken_time' 
+      });
+    }
+
+    // Verify medication belongs to user
+    const medicationCheck = await db.query(
+      'SELECT id FROM medications WHERE id = $1 AND user_id = $2 AND is_active = true',
+      [medication_id, req.user.userId]
+    );
+
+    if (medicationCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบยาดังกล่าว' });
+    }
+
+    const result = await db.query(
+      `INSERT INTO medication_logs (user_id, medication_id, taken_time, status, notes) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user.userId, medication_id, taken_time, status || 'taken', notes || null]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error logging medication:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการบันทึกการทานยา' });
+  }
+});
+
+// Get medication logs
+app.get('/api/medication-logs', authenticateToken, async (req, res) => {
+  try {
+    const { medication_id, days } = req.query;
+    let query = `
+      SELECT ml.*, m.medication_name, m.dosage, m.condition
+      FROM medication_logs ml
+      JOIN medications m ON ml.medication_id = m.id
+      WHERE ml.user_id = $1
+    `;
+    const params = [req.user.userId];
+
+    if (medication_id) {
+      query += ` AND ml.medication_id = $${params.length + 1}`;
+      params.push(medication_id);
+    }
+
+    if (days) {
+      query += ` AND ml.taken_time >= NOW() - INTERVAL '${parseInt(days)} days'`;
+    }
+
+    query += ' ORDER BY ml.taken_time DESC LIMIT 100';
+
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching medication logs:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงประวัติการทานยา' });
+  }
+});
+
 // (moved) SPA catch-all will be registered after static middleware
 
 // Start server with enhanced error handling
