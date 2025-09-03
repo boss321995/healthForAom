@@ -51,8 +51,24 @@ const UpdateProfile = () => {
         return;
       }
 
-      const headers = { Authorization: `Bearer ${token}` };
-  const response = await axios.get('/api/profile', { headers });
+      const headers = { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+      
+      console.log('🔍 Fetching profile with token:', token ? `${token.substring(0, 20)}...` : 'No token');
+      
+      // Use full API URL for better compatibility
+      const apiUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://healthforaom.onrender.com/api/users/profile'
+        : 'http://localhost:5000/api/users/profile';
+        
+      const response = await axios.get(apiUrl, { 
+        headers,
+        timeout: 10000 // 10 second timeout
+      });
+      
+      console.log('📊 Profile data received:', response.data);
       
       if (response.data.profile_completed) {
         setProfileForm({
@@ -146,12 +162,25 @@ const UpdateProfile = () => {
         return;
       }
 
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
       
       console.log('🚀 Sending profile data:', profileForm);
       console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
       
-      await axios.put('/api/profile', profileForm, { headers });
+      // Use full API URL for better compatibility
+      const apiUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://healthforaom.onrender.com/api/profile'
+        : 'http://localhost:5000/api/profile';
+        
+      const response = await axios.put(apiUrl, profileForm, { 
+        headers,
+        timeout: 10000 // 10 second timeout
+      });
+      
+      console.log('✅ Profile update response:', response.data);
       
       setSubmitMessage({ type: 'success', text: 'อัปเดตโปรไฟล์สำเร็จ!' });
       
@@ -161,22 +190,30 @@ const UpdateProfile = () => {
       }, 3000);
       
     } catch (error) {
-      console.error('Error updating profile:', error);
+      console.error('❌ Error updating profile:', error);
       console.error('Error details:', {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
-        headers: error.response?.headers
+        headers: error.response?.headers,
+        config: error.config
       });
       
       let errorMessage = 'เกิดข้อผิดพลาดในการอัปเดตโปรไฟล์';
       
-      if (error.response?.status === 500) {
-        errorMessage = 'เซิร์ฟเวอร์มีปัญหา กรุณาลองใหม่อีกครั้ง';
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'การเชื่อมต่อใช้เวลานานเกินไป กรุณาลองใหม่';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'เซิร์ฟเวอร์มีปัญหา กรุณาตรวจสอบข้อมูลและลองใหม่อีกครั้ง';
+        console.error('Server error details:', error.response?.data);
       } else if (error.response?.status === 401) {
         errorMessage = 'กรุณาเข้าสู่ระบบใหม่';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบและลองใหม่';
       } else if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = `ข้อผิดพลาด: ${error.message}`;
       }
       
       setSubmitMessage({ 

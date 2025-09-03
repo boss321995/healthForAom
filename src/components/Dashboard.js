@@ -1440,6 +1440,112 @@ const Dashboard = () => {
               </div>
             </div>
 
+            {/* Health Behavior Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+              {/* Exercise Card */}
+              <div className="bg-white/90 backdrop-blur-lg rounded-lg p-4 sm:p-6 border border-green-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-green-600 text-xs sm:text-sm font-medium">🏃 พฤติกรรมสุขภาพ</p>
+                    <p className="text-sm sm:text-base font-bold text-green-900 truncate">
+                      🏃 ออกกำลังกาย: {(() => {
+                        const latestExercise = recentMetrics.find(record => record.exercise_duration_minutes && parseInt(record.exercise_duration_minutes) > 0);
+                        return latestExercise ? `${latestExercise.exercise_duration_minutes} นาที` : 'ยังไม่มีข้อมูล';
+                      })()}
+                    </p>
+                    <p className="text-xs text-green-700 mt-1">
+                      {(() => {
+                        const latestExercise = recentMetrics.find(record => record.exercise_duration_minutes && parseInt(record.exercise_duration_minutes) > 0);
+                        if (latestExercise?.exercise_type) return latestExercise.exercise_type;
+                        return '';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sleep Card */}
+              <div className="bg-white/90 backdrop-blur-lg rounded-lg p-4 sm:p-6 border border-purple-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-purple-600 text-xs sm:text-sm font-medium">🏃 พฤติกรรมสุขภาพ</p>
+                    <p className="text-sm sm:text-base font-bold text-purple-900 truncate">
+                      😴 การนอน: {(() => {
+                        const latestSleep = recentMetrics.find(record => record.sleep_hours_per_night && parseFloat(record.sleep_hours_per_night) > 0);
+                        return latestSleep ? `${latestSleep.sleep_hours_per_night} ชั่วโมง` : 'ยังไม่มีข้อมูล';
+                      })()}
+                    </p>
+                    <p className="text-xs text-purple-700 mt-1">
+                      {(() => {
+                        const latestSleep = recentMetrics.find(record => record.sleep_quality);
+                        if (latestSleep?.sleep_quality) return `คุณภาพ: ${latestSleep.sleep_quality}`;
+                        return '';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Alcohol Card */}
+              <div className="bg-white/90 backdrop-blur-lg rounded-lg p-4 sm:p-6 border border-amber-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-amber-600 text-xs sm:text-sm font-medium">🏃 พฤติกรรมสุขภาพ</p>
+                    <p className="text-sm sm:text-base font-bold text-amber-900 truncate">
+                      🍺 ดื่มเหล้า: {(() => {
+                        const latestAlcohol = recentMetrics.find(record => record.alcohol_units && parseInt(record.alcohol_units) > 0);
+                        return latestAlcohol ? `${latestAlcohol.alcohol_units} หน่วย/สัปดาห์` : 'ยังไม่มีข้อมูล';
+                      })()}
+                    </p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      {(() => {
+                        const latestAlcohol = recentMetrics.find(record => record.alcohol_units && parseInt(record.alcohol_units) > 0);
+                        if (latestAlcohol) {
+                          const units = parseInt(latestAlcohol.alcohol_units);
+                          if (units === 0) return 'ไม่ดื่ม';
+                          if (units <= 14) return 'ปริมาณปลอดภัย';
+                          return 'มากเกินไป';
+                        }
+                        return '';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Smoking Card */}
+              <div className="bg-white/90 backdrop-blur-lg rounded-lg p-4 sm:p-6 border border-red-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-red-600 text-xs sm:text-sm font-medium">🏃 พฤติกรรมสุขภาพ</p>
+                    <p className="text-sm sm:text-base font-bold text-red-900 truncate">
+                      🚬 สูบบุหรี่: {(() => {
+                        const latestSmoking = recentMetrics.find(record => record.smoking_cigarettes && parseInt(record.smoking_cigarettes) >= 0);
+                        if (latestSmoking) {
+                          const cigarettes = parseInt(latestSmoking.smoking_cigarettes);
+                          if (cigarettes === 0) return 'ไม่สูบ';
+                          return `${cigarettes} มวน/วัน`;
+                        }
+                        return 'ยังไม่มีข้อมูล';
+                      })()}
+                    </p>
+                    <p className="text-xs text-red-700 mt-1">
+                      {(() => {
+                        const latestSmoking = recentMetrics.find(record => record.smoking_cigarettes && parseInt(record.smoking_cigarettes) >= 0);
+                        if (latestSmoking) {
+                          const cigarettes = parseInt(latestSmoking.smoking_cigarettes);
+                          if (cigarettes === 0) return 'ดีเยี่ยม';
+                          if (cigarettes <= 5) return 'ควรลด';
+                          return 'อันตรายต่อสุขภาพ';
+                        }
+                        return '';
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Quick Actions Section */}
             <div className="mb-8">
               <h3 className="text-xl font-bold text-blue-900 mb-4 flex items-center border-b-2 border-blue-200 pb-2">
