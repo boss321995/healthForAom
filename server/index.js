@@ -745,6 +745,18 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
       allergies: allergies?.trim() || null
     };
 
+    // Detect if column emergency_phone exists in user_profiles
+    const epColCheck = await db.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'user_profiles'
+           AND column_name = 'emergency_phone'
+       ) AS exists`
+    );
+    const hasEmergencyPhoneCol = epColCheck.rows?.[0]?.exists === true;
+    console.log('🔎 user_profiles.emergency_phone exists:', hasEmergencyPhoneCol);
+
     // Check if profile exists
     const existingProfile = await db.query(
       'SELECT profile_id FROM user_profiles WHERE user_id = $1',
@@ -753,31 +765,58 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
 
     if (existingProfile.rows.length === 0) {
       // Create new profile
-      await db.query(
-        `INSERT INTO user_profiles 
-         (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
-          phone, emergency_contact, emergency_phone, medical_conditions, medications, allergies) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
-         sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
-         sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
-         sanitizedData.emergency_phone, sanitizedData.medical_conditions, 
-         sanitizedData.medications, sanitizedData.allergies]
-      );
+      if (hasEmergencyPhoneCol) {
+        await db.query(
+          `INSERT INTO user_profiles 
+           (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+            phone, emergency_contact, emergency_phone, medical_conditions, medications, allergies) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
+           sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
+           sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
+           sanitizedData.emergency_phone, sanitizedData.medical_conditions, 
+           sanitizedData.medications, sanitizedData.allergies]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO user_profiles 
+           (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+            phone, emergency_contact, medical_conditions, medications, allergies) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
+           sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
+           sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact,
+           sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies]
+        );
+      }
       console.log('✅ New profile created for user:', req.user.userId);
     } else {
       // Update existing profile
-      await db.query(
-        `UPDATE user_profiles SET 
-         full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
-         height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
-         medical_conditions = $10, medications = $11, allergies = $12, updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $13`,
-        [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
-         sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
-         sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
-         sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies, req.user.userId]
-      );
+      if (hasEmergencyPhoneCol) {
+        await db.query(
+          `UPDATE user_profiles SET 
+           full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
+           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
+           medical_conditions = $10, medications = $11, allergies = $12, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $13`,
+          [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
+           sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
+           sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
+           sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies, req.user.userId]
+        );
+      } else {
+        await db.query(
+          `UPDATE user_profiles SET 
+           full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
+           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8,
+           medical_conditions = $9, medications = $10, allergies = $11, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $12`,
+          [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
+           sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
+           sanitizedData.phone, sanitizedData.emergency_contact,
+           sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies, req.user.userId]
+        );
+      }
       console.log('✅ Profile updated for user:', req.user.userId);
     }
 
