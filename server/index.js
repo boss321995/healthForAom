@@ -80,6 +80,34 @@ const MAX_CONNECTION_ATTEMPTS = 5;
 // Helper: create a Pool using DATABASE_URL if present, otherwise use discrete DB_* vars
 function createDbPool() {
   const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+  // Determine if DB_* envs are sufficiently defined
+  const hasDbVars = !!(
+    process.env.DB_HOST || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD || process.env.DB_PORT
+  );
+
+  // Prefer DB_* when present (requested behavior)
+  if (hasDbVars) {
+    const host = process.env.DB_HOST || dbConfig.host;
+    const name = process.env.DB_NAME || dbConfig.database;
+    const user = process.env.DB_USER || dbConfig.user;
+    const port = parseInt(process.env.DB_PORT || dbConfig.port, 10);
+    const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+    console.log(`🗄️ Using DB_* environment variables for PostgreSQL (host=${host}, db=${name}, user=${user}, port=${port}, ssl=${!!ssl})`);
+    return new Pool({
+      host,
+      database: name,
+      user,
+      password: process.env.DB_PASSWORD || dbConfig.password,
+      port,
+      ssl,
+      max: dbConfig.max,
+      idleTimeoutMillis: dbConfig.idleTimeoutMillis,
+      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+    });
+  }
+
+  // Fallback to DATABASE_URL
   if (process.env.DATABASE_URL) {
     console.log('🗄️ Using DATABASE_URL for PostgreSQL connection');
     return new Pool({
@@ -90,7 +118,9 @@ function createDbPool() {
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
     });
   }
-  console.log(`🗄️ Using DB_* environment variables for PostgreSQL connection (host=${dbConfig.host}, db=${dbConfig.database}, ssl=${!!dbConfig.ssl})`);
+
+  // Last resort: use baked-in defaults (dev)
+  console.log(`🗄️ Using default dev DB config (host=${dbConfig.host}, db=${dbConfig.database}, ssl=${!!dbConfig.ssl})`);
   return new Pool(dbConfig);
 }
 
