@@ -20,10 +20,23 @@ app.use(cors({
 app.use(express.json());
 
 // Database connection
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+let db;
+if (process.env.NODE_ENV === 'production') {
+  // Production: Use DATABASE_URL from Render
+  db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+} else {
+  // Development: Use local settings
+  db = new Pool({
+    host: 'localhost',
+    port: 5432,
+    database: 'health_management',
+    user: 'postgres',
+    password: 'password',
+  });
+}
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -133,6 +146,8 @@ async function forceMigration() {
 // Medication APIs with table checks
 app.get('/api/medications', authenticateToken, async (req, res) => {
   try {
+    console.log('📋 Medications API called by user:', req.user.userId);
+    
     const tableCheck = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -141,7 +156,10 @@ app.get('/api/medications', authenticateToken, async (req, res) => {
       );
     `);
     
+    console.log('🔍 Medications table exists:', tableCheck.rows[0].exists);
+    
     if (!tableCheck.rows[0].exists) {
+      console.log('⚠️ Medications table not found, returning 503');
       return res.status(503).json({ 
         error: 'ระบบยาอยู่ระหว่างการติดตั้ง กรุณาลองใหม่อีกครั้ง' 
       });
@@ -151,15 +169,20 @@ app.get('/api/medications', authenticateToken, async (req, res) => {
       'SELECT * FROM medications WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC',
       [req.user.userId]
     );
+    
+    console.log('✅ Medications query successful, found:', result.rows.length, 'items');
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching medications:', error);
+    console.error('❌ Error in medications API:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลยา' });
   }
 });
 
 app.get('/api/medication-logs', authenticateToken, async (req, res) => {
   try {
+    console.log('📋 Medication logs API called by user:', req.user.userId);
+    
     const tableCheck = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -168,7 +191,10 @@ app.get('/api/medication-logs', authenticateToken, async (req, res) => {
       );
     `);
     
+    console.log('🔍 Medication logs table exists:', tableCheck.rows[0].exists);
+    
     if (!tableCheck.rows[0].exists) {
+      console.log('⚠️ Medication logs table not found, returning 503');
       return res.status(503).json({ 
         error: 'ระบบยาอยู่ระหว่างการติดตั้ง กรุณาลองใหม่อีกครั้ง' 
       });
@@ -195,11 +221,33 @@ app.get('/api/medication-logs', authenticateToken, async (req, res) => {
     query += ' ORDER BY ml.taken_time DESC LIMIT 100';
 
     const result = await db.query(query, params);
+    console.log('✅ Medication logs query successful, found:', result.rows.length, 'items');
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching medication logs:', error);
+    console.error('❌ Error in medication logs API:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงประวัติการทานยา' });
   }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    service: 'health-management-lite'
+  });
+});
+
+// Catch-all for missing endpoints
+app.use('*', (req, res) => {
+  console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'Endpoint not found', 
+    method: req.method, 
+    path: req.originalUrl,
+    available_endpoints: ['/api/medications', '/api/medication-logs', '/health']
+  });
 });
 
 // Start server
@@ -208,10 +256,27 @@ async function startServer() {
     console.log('🚀 Starting Health Management API (Lite Version)...');
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Port: ${PORT}`);
+    console.log(`🗄️ Database URL: ${process.env.DATABASE_URL ? 'Found' : 'Missing'}`);
     
-    // Test database connection
-    await db.query('SELECT NOW()');
-    console.log('✅ Database connected successfully');
+    if (!process.env.DATABASE_URL) {
+      console.error('❌ DATABASE_URL environment variable is missing!');
+      process.exit(1);
+    }
+    
+    // Test database connection with timeout
+    console.log('🔌 Testing database connection...');
+    
+    const connectionTimeout = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Database connection timeout')), 10000)
+    );
+    
+    const dbTest = await Promise.race([
+      db.query('SELECT NOW() as current_time, version() as db_version'),
+      connectionTimeout
+    ]);
+    
+    console.log('✅ Database connected:', dbTest.rows[0].current_time);
+    console.log('📊 Database version:', dbTest.rows[0].db_version.substring(0, 50) + '...');
     
     // Run force migration
     console.log('🔧 Running force migration...');
@@ -220,16 +285,28 @@ async function startServer() {
     if (migrationSuccess) {
       console.log('✅ Medication tables ready!');
     } else {
-      console.log('⚠️ Medication migration skipped');
+      console.log('⚠️ Medication migration skipped or failed');
+    }
+    
+    // Test medication table access
+    try {
+      const testQuery = await db.query("SELECT 1 FROM medications LIMIT 1");
+      console.log('✅ Medications table accessible');
+    } catch (testError) {
+      console.log('❌ Medications table test failed:', testError.message);
     }
     
     app.listen(PORT, () => {
       console.log(`🎉 Server running on port ${PORT}`);
       console.log(`🌐 API Base URL: http://localhost:${PORT}`);
+      console.log('📋 Available endpoints:');
+      console.log('  - GET /api/medications');
+      console.log('  - GET /api/medication-logs');
     });
     
   } catch (error) {
     console.error('❌ Failed to start server:', error);
+    console.error('Stack trace:', error.stack);
     process.exit(1);
   }
 }
