@@ -77,14 +77,31 @@ let db;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 5;
 
+// Helper: create a Pool using DATABASE_URL if present, otherwise use discrete DB_* vars
+function createDbPool() {
+  const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+  if (process.env.DATABASE_URL) {
+    console.log('🗄️ Using DATABASE_URL for PostgreSQL connection');
+    return new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: (process.env.DB_SSL === 'true' || isProd) ? { rejectUnauthorized: false } : false,
+      max: dbConfig.max,
+      idleTimeoutMillis: dbConfig.idleTimeoutMillis,
+      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+    });
+  }
+  console.log(`🗄️ Using DB_* environment variables for PostgreSQL connection (host=${dbConfig.host}, db=${dbConfig.database}, ssl=${!!dbConfig.ssl})`);
+  return new Pool(dbConfig);
+}
+
 async function initDatabase() {
   try {
     connectionAttempts++;
     console.log(`🔄 Database connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
     
     // Create PostgreSQL connection pool
-    db = new Pool(dbConfig);
-    console.log('🔗 Connected to PostgreSQL database with connection pool');
+  db = createDbPool();
+  console.log('🔗 Created PostgreSQL connection pool');
     
     // Test connection
     const client = await db.connect();
