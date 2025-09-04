@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 const NotificationSystem = ({ userProfile, recentMetrics = [] }) => {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [buttonPosition, setButtonPosition] = useState({ top: 0, right: 0 });
   const buttonRef = React.useRef(null);
+  const Z_OVERLAY = 2147483646; // Below panel
+  const Z_PANEL = 2147483647;   // Max z-index
 
   // คำนวณตำแหน่งของปุ่มเมื่อเปิด dropdown
   const handleToggleNotifications = () => {
@@ -17,6 +20,25 @@ const NotificationSystem = ({ userProfile, recentMetrics = [] }) => {
     }
     setShowNotifications(!showNotifications);
   };
+
+  // Recalculate position on scroll/resize while open
+  useEffect(() => {
+    if (!showNotifications) return;
+    const updatePosition = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      setButtonPosition({
+        top: rect.bottom + window.scrollY + 8,
+        right: Math.max(8, window.innerWidth - rect.right)
+      });
+    };
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showNotifications]);
 
   useEffect(() => {
     generateNotifications();
@@ -139,21 +161,23 @@ const NotificationSystem = ({ userProfile, recentMetrics = [] }) => {
       </button>
 
       {/* Notifications Dropdown */}
-      {showNotifications && (
+      {showNotifications && createPortal((
         <>
           {/* Background overlay */}
           <div 
-            className="fixed inset-0"
-            style={{zIndex: 9998}}
+            className="fixed inset-0 bg-black/10"
+            style={{ zIndex: Z_OVERLAY }}
             onClick={() => setShowNotifications(false)}
           />
           <div 
-            className="fixed w-80 bg-white rounded-lg shadow-xl border-2 border-blue-200 max-h-96 overflow-y-auto" 
+            className="fixed w-80 bg-white rounded-lg shadow-xl border-2 border-blue-200 max-h-96 overflow-y-auto"
             style={{
-              zIndex: 9999,
+              zIndex: Z_PANEL,
               top: `${buttonPosition.top}px`,
               right: `${buttonPosition.right}px`
             }}
+            role="dialog"
+            aria-label="การแจ้งเตือน"
           >
             <div className="p-4 bg-blue-600 text-white rounded-t-lg">
               <h3 className="text-lg font-bold">การแจ้งเตือน</h3>
@@ -192,7 +216,7 @@ const NotificationSystem = ({ userProfile, recentMetrics = [] }) => {
           </div>
           </div>
         </>
-      )}
+      ), document.body)}
     </div>
   );
 };

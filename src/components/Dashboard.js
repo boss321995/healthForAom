@@ -13,6 +13,8 @@ const Dashboard = () => {
   const { user, logout } = useAuth();
   const [healthSummary, setHealthSummary] = useState(null);
   const [recentMetrics, setRecentMetrics] = useState([]);
+  // Metrics-only records for vitals (BP/HR/blood sugar/weight), unaffected by behavior entries
+  const [metricsOnly, setMetricsOnly] = useState([]);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -93,12 +95,13 @@ const Dashboard = () => {
 
   // Helper function to get last checkup date from recent metrics
   const getLastCheckupDate = () => {
-    if (!recentMetrics || recentMetrics.length === 0) {
+    const source = (metricsOnly && metricsOnly.length > 0) ? metricsOnly : recentMetrics;
+    if (!source || source.length === 0) {
       return null;
     }
     
     // หาข้อมูลล่าสุดที่มีความดันหรือชีพจร
-    const latestHealthData = recentMetrics.find(item => 
+    const latestHealthData = source.find(item => 
       item.systolic_bp || item.diastolic_bp || item.heart_rate || item.blood_sugar_mg
     );
     
@@ -109,9 +112,9 @@ const Dashboard = () => {
     }
     
     // ถ้าไม่มีข้อมูลสุขภาพเฉพาะ ใช้ข้อมูลล่าสุดทั้งหมด
-    return recentMetrics[0]?.created_at || 
-           recentMetrics[0]?.record_date || 
-           recentMetrics[0]?.measurement_date;
+    return source[0]?.created_at || 
+           source[0]?.record_date || 
+           source[0]?.measurement_date;
   };
 
   // ข้อมูลสถานะระบบ
@@ -226,6 +229,8 @@ const Dashboard = () => {
     // ดึงข้อมูล health metrics ล่าสุด
   const metricsResponse = await axios.get('/api/health-metrics?limit=50', { headers });
     const metrics = normalizeMetrics(metricsResponse.data || []);
+    // เก็บ metrics-only สำหรับค่าวัดหลัก
+    setMetricsOnly(metrics);
       
       // ดึงข้อมูล health behaviors ล่าสุด
   const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
@@ -273,8 +278,15 @@ const Dashboard = () => {
         screen_time_hours: behavior.screen_time_hours
       }));
 
-      // รวมกับข้อมูลจาก localStorage (ถ้ามี)
-      const localHistory = JSON.parse(localStorage.getItem('healthDataHistory') || '[]');
+      // รวมกับข้อมูลจาก localStorage (ถ้ามี) และทำ timestamp ให้เป็นมาตรฐาน
+      const rawLocalHistory = JSON.parse(localStorage.getItem('healthDataHistory') || '[]');
+      const localHistory = (rawLocalHistory || []).map(item => {
+        const ts = item.timestamp || item.created_at || item.record_date || item.measurement_date || item.date;
+        return {
+          ...item,
+          timestamp: ts ? new Date(ts) : new Date(0)
+        };
+      });
       
       // รวมและเรียงลำดับตามเวลา
       const combinedHistory = [...metricsHistory, ...behaviorsHistory, ...localHistory]
@@ -343,6 +355,7 @@ const Dashboard = () => {
   try {
   const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
     const normalized = normalizeMetrics(metricsResponse.data || []);
+    setMetricsOnly(normalized);
     setRecentMetrics(normalized);
   } catch (error) {
         console.error('Error fetching health metrics:', error);
@@ -414,30 +427,21 @@ const Dashboard = () => {
 
   // ฟังก์ชันดึงค่าล่าสุดที่ไม่เป็น null สำหรับค่าใดค่าหนึ่ง
   const getLatestValidValue = (fieldName) => {
-    if (!recentMetrics || recentMetrics.length === 0) {
-      return null;
-    }
-    
-    // กรองเฉพาะรายการที่มีวันที่ที่ถูกต้อง และเรียงจากวันที่ล่าสุดก่อน
-    const validMetrics = recentMetrics
+    const source = (metricsOnly && metricsOnly.length > 0) ? metricsOnly : recentMetrics;
+    if (!source || source.length === 0) return null;
+
+    const validMetrics = source
       .filter(metric => metric.measurement_date && metric.measurement_date !== 'undefined')
       .sort((a, b) => new Date(b.measurement_date) - new Date(a.measurement_date));
-    
+
     for (const metric of validMetrics) {
       const value = metric[fieldName];
-      
-      // สำหรับความดันและอัตราการเต้นหัวใจ ไม่ควรเป็น 0 จริงๆ แต่สำหรับค่าอื่นอาจเป็น 0 ได้
       if (['systolic_bp', 'diastolic_bp', 'heart_rate'].includes(fieldName)) {
-        if (value !== null && value !== undefined && value > 0 && value !== '') {
-          return value;
-        }
+        if (value !== null && value !== undefined && value !== '' && Number(value) > 0) return value;
       } else {
-        if (value !== null && value !== undefined && value !== '' && (typeof value === 'number' ? value >= 0 : true)) {
-          return value;
-        }
+        if (value !== null && value !== undefined && value !== '') return value;
       }
     }
-    
     return null;
   };
 
@@ -2956,7 +2960,7 @@ const Dashboard = () => {
                         max="20"
                         name="alcohol_units"
                         value={lifestyleForm.alcohol_units}
-                        onChange={handleLifestyleChange}
+                        onChange={handleLifestyleInputChange}
                         placeholder="จำนวนหน่วยเหล้า"
                         className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
                       />
@@ -2972,7 +2976,7 @@ const Dashboard = () => {
                         max="100"
                         name="smoking_cigarettes"
                         value={lifestyleForm.smoking_cigarettes}
-                        onChange={handleLifestyleChange}
+                        onChange={handleLifestyleInputChange}
                         placeholder="จำนวนมวนบุหรี่"
                         className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
                       />
@@ -2987,7 +2991,7 @@ const Dashboard = () => {
                         max="20"
                         name="caffeine_cups"
                         value={lifestyleForm.caffeine_cups}
-                        onChange={handleLifestyleChange}
+                        onChange={handleLifestyleInputChange}
                         placeholder="กาแฟ ชา เครื่องดื่มเพื่อสุขภาพ"
                         className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
                       />
@@ -3003,7 +3007,7 @@ const Dashboard = () => {
                         step="0.5"
                         name="screen_time_hours"
                         value={lifestyleForm.screen_time_hours}
-                        onChange={handleLifestyleChange}
+                        onChange={handleLifestyleInputChange}
                         placeholder="โทรศัพท์ คอมพิวเตอร์ ทีวี"
                         className="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-lg text-orange-900 placeholder-orange-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
                       />
@@ -3343,7 +3347,7 @@ const Dashboard = () => {
                         value={lifestyleForm.alcohol_units}
                         onChange={handleLifestyleInputChange}
                         min="0"
-                        max="50"
+                        max="200"
                         className="w-full px-4 py-2 bg-white border border-red-300 rounded-lg text-red-900 focus:outline-none focus:border-red-500"
                         placeholder="เช่น 0 (1 หน่วย = เบียร์ 1 กระป๋อง)"
                       />

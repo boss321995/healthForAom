@@ -169,6 +169,14 @@ async function handleDatabaseError(error, operation = 'unknown') {
     console.log('🔄 Attempting to reconnect to database...');
     await initDatabase();
   }
+    // Ensure profile schema compatibility (add missing columns if needed)
+    try {
+      await db.query("ALTER TABLE IF NOT EXISTS user_profiles ADD COLUMN IF NOT EXISTS emergency_phone VARCHAR(20)");
+      console.log('🛠️ Ensured user_profiles.emergency_phone column exists');
+    } catch (schemaErr) {
+      console.error('⚠️ Failed to ensure user_profiles.emergency_phone:', schemaErr.message);
+    }
+
   
   throw error;
 }

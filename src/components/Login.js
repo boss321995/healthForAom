@@ -180,22 +180,7 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
               </div>
             )}
             
-            {/* ข้อมูล credentials สำหรับทดสอบ */}
-            {!error && (
-              <div className="bg-blue-50 border-2 border-blue-200 text-blue-800 px-4 py-3 rounded-lg text-sm">
-                <div className="flex items-start">
-                  <span className="text-lg mr-2">💡</span>
-                  <div>
-                    <p className="font-semibold mb-2">ข้อมูลสำหรับทดสอบ:</p>
-                    <div className="text-xs space-y-1">
-                      <p><strong>Production:</strong> username="boss", password="boss321995"</p>
-                      <p><strong>Demo:</strong> username="demo", password="123456"</p>
-                      <p className="text-blue-600 mt-2">หรือสมัครสมาชิกใหม่ได้ที่ด้านล่าง</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+          
             
             <div>
               <label htmlFor="username" className="block text-sm font-bold text-blue-800 mb-2">
