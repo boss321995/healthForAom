@@ -8,10 +8,12 @@ import HealthAnalytics from './healthAnalytics.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 
 dotenv.config();
 
@@ -2799,17 +2801,10 @@ async function startServer() {
     
     await initDatabase();
     
-    // Run medication tables migration
+    // Run medication tables migration (load CJS module from ESM using createRequire)
     try {
-      const { default: runMedicationMigrationCjs } = await import(path.join(__dirname, 'migrate-medications.js'))
-        .then(mod => ({ default: mod.default || mod }))
-        .catch(async () => {
-          // Fallback to CommonJS require if import fails
-          // eslint-disable-next-line global-require
-          const cjs = require('./migrate-medications');
-          return { default: cjs };
-        });
-      await runMedicationMigrationCjs();
+      const runMedicationMigration = require('./migrate-medications');
+      await runMedicationMigration();
       console.log('🏥 Medication tables migration completed');
     } catch (migrationError) {
       console.error('⚠️ Medication migration failed, but continuing:', migrationError.message);
