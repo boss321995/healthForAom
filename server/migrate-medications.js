@@ -1,15 +1,51 @@
 const { Client } = require('pg');
 
+function buildClient() {
+  const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+  const hasDbVars = !!(
+    process.env.DB_HOST || process.env.DB_NAME || process.env.DB_USER || process.env.DB_PASSWORD || process.env.DB_PORT
+  );
+
+  if (hasDbVars) {
+    const config = {
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'health_management',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    };
+    console.log(`🗄️ [migration] Using DB_* envs (host=${config.host}, db=${config.database}, user=${config.user}, port=${config.port}, ssl=${!!config.ssl})`);
+    return new Client(config);
+  }
+
+  if (process.env.DATABASE_URL) {
+    console.log('🗄️ [migration] Using DATABASE_URL');
+    return new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: isProd ? { rejectUnauthorized: false } : false,
+    });
+  }
+
+  // Fallback dev defaults
+  console.log('🗄️ [migration] Using default dev config');
+  return new Client({
+    host: 'localhost',
+    database: 'health_management',
+    user: 'postgres',
+    password: '',
+    port: 5432,
+    ssl: false,
+  });
+}
+
 async function runMigration() {
   // Use environment variables or fallback to default
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-  });
+  const client = buildClient();
 
   try {
     await client.connect();
-    console.log('🔗 Connected to database for medication tables migration');
+  console.log('🔗 Connected to database for medication tables migration');
     console.log('🚀 Starting medication tables migration process...');
     
     // Check if users table exists first

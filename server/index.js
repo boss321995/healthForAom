@@ -2801,8 +2801,15 @@ async function startServer() {
     
     // Run medication tables migration
     try {
-      const runMedicationMigration = require('./migrate-medications');
-      await runMedicationMigration();
+      const { default: runMedicationMigrationCjs } = await import(path.join(__dirname, 'migrate-medications.js'))
+        .then(mod => ({ default: mod.default || mod }))
+        .catch(async () => {
+          // Fallback to CommonJS require if import fails
+          // eslint-disable-next-line global-require
+          const cjs = require('./migrate-medications');
+          return { default: cjs };
+        });
+      await runMedicationMigrationCjs();
       console.log('🏥 Medication tables migration completed');
     } catch (migrationError) {
       console.error('⚠️ Medication migration failed, but continuing:', migrationError.message);
