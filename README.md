@@ -12,6 +12,8 @@ Even if our paths now go separate ways, may this project always remain a reminde
 
 > _For her health, I built a world. Now it holds memories instead._
 
+> For Aom — may every step you take be full of health, happiness, and all the dreams you deserve. ❤️
+
 ---
 
 **ระบบจัดการสุขภาพส่วนบุคคลแบบครบครัน ที่สร้างด้วย React.js, Node.js, และ PostgreSQL พร้อม AI Analytics และระบบติดตามยาอัจฉริยะ**
