@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import fs from 'fs';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,6 +62,26 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Multer configuration for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // ตรวจสอบประเภทไฟล์
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    const isDicom = file.originalname.toLowerCase().endsWith('.dcm');
+    
+    if (allowedTypes.includes(file.mimetype) || isDicom) {
+      cb(null, true);
+    } else {
+      cb(new Error('รองรับเฉพาะไฟล์ JPEG, PNG และ DICOM เท่านั้น'), false);
+    }
+  }
+});
 
 // Database connection with PostgreSQL
 const dbConfig = {
@@ -2837,6 +2858,226 @@ app.get('/api/medication-logs', authenticateToken, async (req, res) => {
   }
 });
 
+// Medical Image Analysis APIs
+// Analyze medical image with AI
+app.post('/api/medical-images/analyze', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'กรุณาเลือกไฟล์ภาพ' });
+    }
+
+    const { imageType } = req.body;
+    const userId = req.user.userId;
+
+    if (!imageType || !['xray', 'mri'].includes(imageType)) {
+      return res.status(400).json({ error: 'ประเภทภาพไม่ถูกต้อง (xray หรือ mri เท่านั้น)' });
+    }
+
+    // Mock AI analysis (จำลองการวิเคราะห์ด้วย AI)
+    // ในการใช้งานจริงจะต้องเชื่อมต่อกับ AI service เช่น TensorFlow, OpenAI Vision API
+    const analysisResult = await simulateImageAnalysis(req.file, imageType);
+
+    // บันทึกผลการวิเคราะห์ลงฐานข้อมูล
+    const insertResult = await db.query(`
+      INSERT INTO medical_images (
+        user_id, image_type, original_filename, file_size, 
+        analysis_result, confidence_score, risk_level, 
+        primary_finding, findings, recommendations
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id, confidence_score, risk_level, primary_finding, findings, recommendations, created_at
+    `, [
+      userId,
+      imageType, 
+      req.file.originalname,
+      req.file.size,
+      JSON.stringify(analysisResult),
+      analysisResult.confidence,
+      analysisResult.riskLevel,
+      analysisResult.primaryFinding,
+      JSON.stringify(analysisResult.findings),
+      JSON.stringify(analysisResult.recommendations)
+    ]);
+
+    const savedResult = insertResult.rows[0];
+
+    res.json({
+      success: true,
+      id: savedResult.id,
+      imageType: imageType,
+      confidence: savedResult.confidence_score,
+      riskLevel: savedResult.risk_level,
+      primaryFinding: savedResult.primary_finding,
+      findings: savedResult.findings,
+      recommendations: savedResult.recommendations,
+      analyzedAt: savedResult.created_at
+    });
+
+  } catch (error) {
+    console.error('Error analyzing medical image:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการวิเคราะห์ภาพ' });
+  }
+});
+
+// Get analysis history
+app.get('/api/medical-images/history', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { limit = 20, offset = 0 } = req.query;
+
+    const result = await db.query(`
+      SELECT 
+        id, image_type, original_filename, confidence_score,
+        risk_level, primary_finding, created_at
+      FROM medical_images 
+      WHERE user_id = $1 
+      ORDER BY created_at DESC 
+      LIMIT $2 OFFSET $3
+    `, [userId, parseInt(limit), parseInt(offset)]);
+
+    res.json(result.rows.map(row => ({
+      id: row.id,
+      imageType: row.image_type,
+      filename: row.original_filename,
+      confidence: row.confidence_score,
+      riskLevel: row.risk_level,
+      primaryFinding: row.primary_finding,
+      createdAt: row.created_at
+    })));
+
+  } catch (error) {
+    console.error('Error fetching analysis history:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงประวัติการวิเคราะห์' });
+  }
+});
+
+// Get detailed analysis result
+app.get('/api/medical-images/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const imageId = req.params.id;
+
+    const result = await db.query(`
+      SELECT * FROM medical_images 
+      WHERE id = $1 AND user_id = $2
+    `, [imageId, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลการวิเคราะห์' });
+    }
+
+    const analysis = result.rows[0];
+    res.json({
+      id: analysis.id,
+      imageType: analysis.image_type,
+      filename: analysis.original_filename,
+      confidence: analysis.confidence_score,
+      riskLevel: analysis.risk_level,
+      primaryFinding: analysis.primary_finding,
+      findings: analysis.findings,
+      recommendations: analysis.recommendations,
+      createdAt: analysis.created_at
+    });
+
+  } catch (error) {
+    console.error('Error fetching analysis details:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงรายละเอียดการวิเคราะห์' });
+  }
+});
+
+// Delete analysis record
+app.delete('/api/medical-images/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const imageId = req.params.id;
+
+    const result = await db.query(`
+      DELETE FROM medical_images 
+      WHERE id = $1 AND user_id = $2 
+      RETURNING id
+    `, [imageId, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลการวิเคราะห์ที่ต้องการลบ' });
+    }
+
+    res.json({ success: true, message: 'ลบข้อมูลการวิเคราะห์เรียบร้อยแล้ว' });
+
+  } catch (error) {
+    console.error('Error deleting analysis:', error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบข้อมูล' });
+  }
+});
+
+// Function to simulate AI image analysis
+async function simulateImageAnalysis(file, imageType) {
+  // จำลองการประมวลผล AI
+  await new Promise(resolve => setTimeout(resolve, 2000)); // จำลองเวลาประมวลผล
+
+  const confidence = Math.floor(Math.random() * 25) + 75; // 75-99%
+  
+  let analysisResult = {
+    confidence: confidence,
+    riskLevel: 'ต่ำ',
+    primaryFinding: 'ไม่พบความผิดปกติที่เด่นชัด',
+    findings: [],
+    recommendations: []
+  };
+
+  if (imageType === 'xray') {
+    // จำลองผลการวิเคราะห์ X-Ray
+    const xrayFindings = [
+      { name: 'โครงสร้างกระดูก', probability: 95, description: 'โครงสร้างกระดูกปกติ' },
+      { name: 'ปอด', probability: 92, description: 'ปอดใส ไม่มีเงาผิดปกติ' },
+      { name: 'หัวใจ', probability: 88, description: 'ขนาดหัวใจในเกณฑ์ปกติ' }
+    ];
+
+    if (confidence > 85) {
+      analysisResult.findings = xrayFindings;
+      analysisResult.recommendations = [
+        'ผลการตรวจมีความน่าเชื่อถือสูง',
+        'ควรติดตามตรวจซ้ำตามกำหนดของแพทย์',
+        'รักษาสุขภาพด้วยการออกกำลังกายสม่ำเสมอ'
+      ];
+    } else {
+      analysisResult.riskLevel = 'ปานกลาง';
+      analysisResult.findings = [
+        { name: 'คุณภาพภาพ', probability: 70, description: 'คุณภาพภาพอาจไม่เพียงพอสำหรับการวิเคราะห์ที่แม่นยำ' }
+      ];
+      analysisResult.recommendations = [
+        'ควรถ่ายภาพใหม่ด้วยคุณภาพที่ดีกว่า',
+        'ปรึกษาแพทย์ผู้เชี่ยวชาญเพื่อการวินิจฉัยที่แม่นยำ'
+      ];
+    }
+  } else if (imageType === 'mri') {
+    // จำลองผลการวิเคราะห์ MRI
+    const mriFindings = [
+      { name: 'โครงสร้างสมอง', probability: 94, description: 'โครงสร้างสมองปกติ' },
+      { name: 'เนื้อเยื่อออ่อน', probability: 90, description: 'เนื้อเยื่ออ่อนไม่มีความผิดปกติ' },
+      { name: 'การไหลเวียนโลหิต', probability: 87, description: 'การไหลเวียนโลหิตปกติ' }
+    ];
+
+    if (confidence > 85) {
+      analysisResult.findings = mriFindings;
+      analysisResult.recommendations = [
+        'ผลการตรวจอยู่ในเกณฑ์ปกติ',
+        'ดูแลสุขภาพสมองด้วยการนอนหลับเพียงพอ',
+        'ออกกำลังกายสม่ำเสมอเพื่อสุขภาพสมอง'
+      ];
+    } else {
+      analysisResult.riskLevel = 'ปานกลาง';
+      analysisResult.findings = [
+        { name: 'ความชัดของภาพ', probability: 65, description: 'ภาพอาจไม่เพียงพอชัดสำหรับการวิเคราะห์รายละเอียด' }
+      ];
+      analysisResult.recommendations = [
+        'ควรตรวจซ้ำด้วยเครื่อง MRI ที่มีความละเอียดสูงกว่า',
+        'ปรึกษาแพทย์นิวโรโลจีสำหรับการประเมินเพิ่มเติม'
+      ];
+    }
+  }
+
+  return analysisResult;
+}
+
 // (moved) SPA catch-all will be registered after static middleware
 
 // Start server with enhanced error handling
@@ -2856,6 +3097,34 @@ async function startServer() {
     } catch (migrationError) {
       console.error('⚠️ Medication migration failed, but continuing:', migrationError.message);
     }
+
+    // Medical Image Analysis APIs
+    // Create medical_images table if not exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS medical_images (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        image_type VARCHAR(20) NOT NULL CHECK (image_type IN ('xray', 'mri')),
+        original_filename VARCHAR(255),
+        file_path VARCHAR(500),
+        file_size INTEGER,
+        analysis_result JSONB,
+        confidence_score DECIMAL(5,2),
+        risk_level VARCHAR(20),
+        primary_finding TEXT,
+        findings JSONB,
+        recommendations JSONB,
+        processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_medical_images_user_id ON medical_images(user_id);
+      CREATE INDEX IF NOT EXISTS idx_medical_images_type ON medical_images(image_type);
+      CREATE INDEX IF NOT EXISTS idx_medical_images_risk ON medical_images(risk_level);
+    `);
     
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Health Management API running on port ${PORT}`);
