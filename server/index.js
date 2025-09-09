@@ -3089,13 +3089,13 @@ async function startServer() {
     
     await initDatabase();
     
-    // Run medication tables migration (load CJS module from ESM using createRequire)
+    // Run medication tables fix (load CJS module from ESM using createRequire)
     try {
-      const runMedicationMigration = require('./migrate-medications');
-      await runMedicationMigration();
-      console.log('🏥 Medication tables migration completed');
+      const fixMedicationTables = require('./fix-medication-tables');
+      await fixMedicationTables();
+      console.log('🏥 Medication tables fix completed');
     } catch (migrationError) {
-      console.error('⚠️ Medication migration failed, but continuing:', migrationError.message);
+      console.error('⚠️ Medication tables fix failed, but continuing:', migrationError.message);
     }
 
     // Medical Image Analysis APIs
