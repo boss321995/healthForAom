@@ -65,12 +65,14 @@ export default function HealthTrends({ userId }) {
   const selectedMetric = metricLabels[selected];
   const colorScheme = colors[selectedMetric.color];
 
-  // กรองข้อมูลที่มีค่าที่ถูกต้อง (ไม่ใช่ null, undefined, 0, หรือ '')
+  // กรองข้อมูลที่มีค่าที่ถูกต้อง (ยอมให้แสดงตั้งแต่ข้อมูลครั้งแรก)
   const validMetrics = metrics.filter(m => {
     const value = m[selected];
-    if (value == null || value === undefined || value === '' || value === 0) return false;
+    if (value == null || value === undefined || value === '') return false;
+    // สำหรับน้ำหนัก น้ำตาล ความดัน อัตราการเต้นหัวใจ - ไม่ควรเป็น 0 จริงๆ
+    if (['weight_kg', 'systolic_bp', 'diastolic_bp', 'heart_rate', 'blood_sugar_mg'].includes(selected) && value === 0) return false;
     const num = typeof value === 'string' ? parseFloat(value) : Number(value);
-    return !isNaN(num) && num > 0;
+    return !isNaN(num) && num >= 0; // เปลี่ยนจาก > 0 เป็น >= 0 เพื่อรองรับค่า 0 ในบางกรณี
   });
 
   // เตรียมข้อมูลกราฟแนวนอน
@@ -244,14 +246,16 @@ export default function HealthTrends({ userId }) {
     }
   };
 
-  // คำนวณสถิติ (กรองข้อมูลที่ไม่ถูกต้อง)
+  // คำนวณสถิติ (แสดงตั้งแต่มีข้อมูลครั้งแรก)
   const rawValues = metrics.map(m => m[selected]);
   const values = metrics
     .map(m => m[selected])
-    .filter(v => v != null && v !== undefined && v !== '' && v !== 0)
+    .filter(v => v != null && v !== undefined && v !== '')
     .map(v => {
       const num = typeof v === 'string' ? parseFloat(v) : Number(v);
-      return isNaN(num) || num <= 0 ? null : num;
+      // สำหรับค่าสำคัญ (น้ำหนัก ความดัน ชีพจร น้ำตาล) ไม่ควรเป็น 0
+      if (['weight_kg', 'systolic_bp', 'diastolic_bp', 'heart_rate', 'blood_sugar_mg'].includes(selected) && num === 0) return null;
+      return isNaN(num) || num < 0 ? null : num; // เปลี่ยนจาก <= 0 เป็น < 0
     })
     .filter(v => v !== null);
     
@@ -282,7 +286,7 @@ export default function HealthTrends({ userId }) {
           📊 แนวโน้มสุขภาพ
         </h2>
         <p className="text-gray-600 text-lg">
-          ติดตามและวิเคราะห์ข้อมูลสุขภาพของคุณเพื่อสุขภาพที่ดีขึ้น
+          ติดตามและวิเคราะห์ข้อมูลสุขภาพของคุณเพื่อสุขภาพที่ดีขึ้น (แสดงผลตั้งแต่ข้อมูลครั้งแรก)
         </p>
       </div>
 
@@ -343,8 +347,8 @@ export default function HealthTrends({ userId }) {
         </div>
       </div>
 
-      {/* สถิติด่วน */}
-      {stats && values.length > 0 ? (
+      {/* สถิติด่วน - แสดงตั้งแต่มีข้อมูลครั้งแรก */}
+      {stats && validMetrics.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 text-center shadow-md border border-gray-100">
             <div className="text-2xl font-bold text-blue-600">
@@ -371,19 +375,24 @@ export default function HealthTrends({ userId }) {
             <div className="text-sm text-gray-600">เฉลี่ย</div>
           </div>
         </div>
-      ) : metrics.length > 0 ? (
+      ) : validMetrics.length === 0 && metrics.length > 0 ? (
         <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
           <div className="flex items-start">
-            <span className="text-yellow-600 mr-2">⚠️</span>
+            <span className="text-yellow-600 mr-2">💡</span>
             <div className="text-yellow-800">
-              <strong>ไม่สามารถคำนวณสถิติได้:</strong> ข้อมูล {selectedMetric.label} ที่มีอยู่ไม่ใช่ตัวเลขหรือไม่ครบถ้วน
+              <strong>ข้อมูล {selectedMetric.label} พร้อมแสดงแนวโน้มแล้ว!</strong> 
               <div className="text-sm mt-1">
-                พบข้อมูลทั้งหมด {metrics.length} รายการ แต่มีข้อมูลที่ใช้ได้ {values.length} รายการ
+                พบข้อมูลทั้งหมด {metrics.length} รายการ มีข้อมูลที่ใช้ได้ {values.length} รายการ
               </div>
+              {values.length === 0 && (
+                <div className="text-sm mt-2">
+                  กรุณาตรวจสอบว่าข้อมูลในฟิลด์ "{selected}" มีค่าที่ถูกต้อง (ไม่เป็น 0, null หรือข้อความว่าง)
+                </div>
+              )}
               <div className="text-xs mt-2 p-2 bg-white rounded border">
                 <strong>Debug Info:</strong><br/>
                 - ฟิลด์ที่ใช้: {selected}<br/>
-                - ข้อมูลดิบ: {JSON.stringify(rawValues)}<br/>
+                - ข้อมูลดิบ: {JSON.stringify(rawValues.slice(0, 5))}...<br/>
                 - ฟิลด์ที่มีใน DB: {metrics.length > 0 ? Object.keys(metrics[0]).join(', ') : 'ไม่มี'}
               </div>
             </div>
@@ -398,11 +407,15 @@ export default function HealthTrends({ userId }) {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
             <span className="ml-3 text-blue-600 font-medium">กำลังโหลดข้อมูล...</span>
           </div>
-        ) : metrics.length === 0 ? (
+        ) : validMetrics.length === 0 ? (
           <div className="text-center py-20">
             <div className="text-6xl mb-4">📊</div>
-            <div className="text-gray-500 text-lg">ยังไม่มีข้อมูลสำหรับแสดงกราฟ</div>
-            <div className="text-gray-400 text-sm mt-2">กรุณาเพิ่มข้อมูลสุขภาพเพื่อดูแนวโน้ม</div>
+            <div className="text-gray-500 text-lg">ไม่มีข้อมูล {selectedMetric.label} ที่ถูกต้องสำหรับแสดงกราฟ</div>
+            <div className="text-gray-400 text-sm mt-2">
+              {metrics.length > 0 
+                ? `มีข้อมูลทั้งหมด ${metrics.length} รายการ แต่ค่าไม่ถูกต้อง (เป็น 0, null หรือไม่ใช่ตัวเลข)`
+                : 'กรุณาเพิ่มข้อมูลสุขภาพเพื่อดูแนวโน้ม'}
+            </div>
           </div>
         ) : (
           <div>
@@ -419,12 +432,16 @@ export default function HealthTrends({ userId }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">จำนวนข้อมูล</div>
-                  <div className="text-xl font-bold text-blue-600">{metrics.length} รายการ</div>
+                  <div className="text-sm text-gray-500">จำนวนข้อมูลที่ใช้ได้</div>
+                  <div className="text-xl font-bold text-blue-600">{validMetrics.length} รายการ</div>
+                  {validMetrics.length === 1 && (
+                    <div className="text-xs text-green-600 mt-1">✨ เริ่มต้นแล้ว! เพิ่มข้อมูลเพื่อดูแนวโน้ม</div>
+                  )}
                 </div>
               </div>
             </div>
             
+            {/* แสดงกราฟ แม้มีข้อมูลเพียงจุดเดียว */}
             <div style={{ height: chartType === 'bar' ? '600px' : '450px' }}>
               {chartType === 'line' ? (
                 <Line data={chartData} options={chartOptions} />
@@ -432,6 +449,31 @@ export default function HealthTrends({ userId }) {
                 <Bar data={chartData} options={chartOptions} />
               )}
             </div>
+            
+            {/* ข้อความสำหรับข้อมูลน้อย */}
+            {validMetrics.length === 1 && (
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-start">
+                  <span className="text-green-600 mr-2">🎉</span>
+                  <div className="text-sm text-green-700">
+                    <strong>ยินดีด้วย!</strong> คุณได้เริ่มบันทึกข้อมูล {selectedMetric.label} แล้ว! 
+                    เมื่อมีข้อมูลมากขึ้น คุณจะสามารถเห็นแนวโน้มการเปลี่ยนแปลงได้ชัดเจนขึ้น
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {validMetrics.length >= 2 && validMetrics.length < 5 && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start">
+                  <span className="text-blue-600 mr-2">📈</span>
+                  <div className="text-sm text-blue-700">
+                    <strong>ดีมาก!</strong> มีข้อมูล {validMetrics.length} จุดแล้ว เริ่มเห็นแนวโน้มได้! 
+                    เพิ่มข้อมูลอีกเพื่อวิเคราะห์ที่แม่นยำยิ่งขึ้น
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* คำอธิบายเพิ่มเติมสำหรับกราฟแท่ง */}
             {chartType === 'bar' && (
