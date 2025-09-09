@@ -258,6 +258,11 @@ export default function HealthTrends({ userId }) {
       return isNaN(num) || num < 0 ? null : num; // เปลี่ยนจาก <= 0 เป็น < 0
     })
     .filter(v => v !== null);
+
+  // ตรวจสอบเพิ่มเติมสำหรับความดันโลหิต
+  if ((selected === 'systolic_bp' || selected === 'diastolic_bp') && values.length === 0) {
+    console.warn(`⚠️ ไม่พบข้อมูล ${selected} ที่ถูกต้อง. ข้อมูลดิบ:`, rawValues);
+  }
     
   // เพิ่ม debug log
   console.log('🔍 Debug HealthTrends:', {
@@ -265,17 +270,18 @@ export default function HealthTrends({ userId }) {
     selectedMetric: metricLabels[selected],
     metricsCount: metrics.length,
     validValuesCount: values.length,
-    rawValues: rawValues,
+    rawValues: rawValues.slice(0, 3),
+    processedValues: values.slice(0, 3),
+    stats: stats,
     firstMetric: metrics[0],
-    availableKeys: metrics.length > 0 ? Object.keys(metrics[0]) : [],
-    processedValues: values
+    availableKeys: metrics.length > 0 ? Object.keys(metrics[0]) : []
   });
     
   const stats = values.length > 0 ? {
     latest: values[values.length - 1] || 0,
-    highest: Math.max(...values) || 0,
-    lowest: Math.min(...values) || 0,
-    average: values.length > 0 ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1) : '0.0'
+    highest: values.length > 0 ? Math.max(...values) : 0,
+    lowest: values.length > 0 ? Math.min(...values) : 0,
+    average: values.length > 0 ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)) : 0
   } : null;
 
   return (
@@ -352,25 +358,25 @@ export default function HealthTrends({ userId }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 text-center shadow-md border border-gray-100">
             <div className="text-2xl font-bold text-blue-600">
-              {stats.latest !== undefined && stats.latest !== null ? stats.latest : '--'}
+              {stats.latest !== undefined && stats.latest !== null && !isNaN(stats.latest) ? stats.latest : '--'}
             </div>
             <div className="text-sm text-gray-600">ล่าสุด</div>
           </div>
           <div className="bg-white rounded-xl p-4 text-center shadow-md border border-gray-100">
             <div className="text-2xl font-bold text-green-600">
-              {stats.highest !== undefined && stats.highest !== null && !isNaN(stats.highest) ? stats.highest : '--'}
+              {stats.highest !== undefined && stats.highest !== null && !isNaN(stats.highest) && stats.highest > 0 ? stats.highest : '--'}
             </div>
             <div className="text-sm text-gray-600">สูงสุด</div>
           </div>
           <div className="bg-white rounded-xl p-4 text-center shadow-md border border-gray-100">
             <div className="text-2xl font-bold text-orange-600">
-              {stats.lowest !== undefined && stats.lowest !== null && !isNaN(stats.lowest) ? stats.lowest : '--'}
+              {stats.lowest !== undefined && stats.lowest !== null && !isNaN(stats.lowest) && stats.lowest > 0 ? stats.lowest : '--'}
             </div>
             <div className="text-sm text-gray-600">ต่ำสุด</div>
           </div>
           <div className="bg-white rounded-xl p-4 text-center shadow-md border border-gray-100">
             <div className="text-2xl font-bold text-purple-600">
-              {stats.average !== undefined && stats.average !== null && stats.average !== 'NaN' ? stats.average : '--'}
+              {stats.average !== undefined && stats.average !== null && !isNaN(stats.average) && stats.average > 0 ? stats.average : '--'}
             </div>
             <div className="text-sm text-gray-600">เฉลี่ย</div>
           </div>
