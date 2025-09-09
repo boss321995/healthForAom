@@ -2031,6 +2031,86 @@ function trackActivity(req, res, next) {
 }
 
 // ===============================
+// 🏥 Medication Tables Creation (ESM Compatible)
+// ===============================
+
+async function createMedicationTables() {
+  try {
+    console.log('📋 Creating medication tables...');
+    
+    // Check if users table exists and get column name
+    const userColumns = await db.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'users'
+      AND column_name IN ('id', 'user_id');
+    `);
+    
+    const userIdColumn = userColumns.rows.find(row => row.column_name === 'id') ? 'id' : 
+                        userColumns.rows.find(row => row.column_name === 'user_id') ? 'user_id' : null;
+    
+    if (!userIdColumn) {
+      throw new Error('No valid user ID column found in users table');
+    }
+    
+    console.log(`✅ Using users.${userIdColumn} for foreign key references`);
+    
+    // Drop existing tables with potential wrong constraints
+    await db.query('DROP TABLE IF EXISTS medication_logs CASCADE;');
+    await db.query('DROP TABLE IF EXISTS medications CASCADE;');
+    
+    // Create medications table
+    await db.query(`
+      CREATE TABLE medications (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          medication_name VARCHAR(255) NOT NULL,
+          dosage VARCHAR(100) NOT NULL,
+          frequency VARCHAR(100) NOT NULL,
+          time_schedule VARCHAR(255) NOT NULL,
+          start_date DATE,
+          end_date DATE,
+          condition VARCHAR(100),
+          reminder_enabled BOOLEAN DEFAULT true,
+          notes TEXT,
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(${userIdColumn}) ON DELETE CASCADE
+      );
+    `);
+    
+    // Create medication_logs table
+    await db.query(`
+      CREATE TABLE medication_logs (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          medication_id INTEGER NOT NULL,
+          taken_time TIMESTAMP NOT NULL,
+          status VARCHAR(50) DEFAULT 'taken',
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(${userIdColumn}) ON DELETE CASCADE,
+          FOREIGN KEY (medication_id) REFERENCES medications(id) ON DELETE CASCADE
+      );
+    `);
+    
+    // Create indexes
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medications_user_id ON medications(user_id);');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medications_is_active ON medications(is_active);');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_user_id ON medication_logs(user_id);');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_medication_id ON medication_logs(medication_id);');
+    
+    console.log('✅ Medication tables created successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Medication tables creation error:', error.message);
+    throw error;
+  }
+}
+
+// ===============================
 // 🗄️ Database Migration Routes (Development/Setup Only)
 // ===============================
 
@@ -2065,7 +2145,7 @@ app.post('/api/setup/migrate', async (req, res) => {
           allergies TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS health_metrics (
@@ -2096,7 +2176,7 @@ app.post('/api/setup/migrate', async (req, res) => {
           measurement_date DATE NOT NULL,
           notes TEXT,
           recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS health_behavior (
@@ -2119,7 +2199,7 @@ app.post('/api/setup/migrate', async (req, res) => {
           behavior_date DATE NOT NULL,
           notes TEXT,
           recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -2143,7 +2223,7 @@ app.post('/api/setup/migrate', async (req, res) => {
 
     -- Health summary table used by /api/health-summary
     CREATE TABLE IF NOT EXISTS health_summary (
-      user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       overall_health_score INTEGER DEFAULT 0,
       bmi DECIMAL(4,2),
       bmi_category VARCHAR(50),
@@ -2165,7 +2245,7 @@ app.post('/api/setup/migrate', async (req, res) => {
     -- Health assessments table used by assessment endpoints
     CREATE TABLE IF NOT EXISTS health_assessments (
       assessment_id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       smoking_status VARCHAR(20),
       smoking_years INTEGER,
       smoking_pack_per_day DECIMAL(4,2),
@@ -2215,7 +2295,7 @@ app.post('/api/setup/migrate', async (req, res) => {
     -- Activity logs used by export endpoint
     CREATE TABLE IF NOT EXISTS activity_logs (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       action VARCHAR(100) NOT NULL,
       details JSONB,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -2283,7 +2363,7 @@ app.get('/api/setup/migrate', async (req, res) => {
           allergies TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS health_metrics (
@@ -2314,7 +2394,7 @@ app.get('/api/setup/migrate', async (req, res) => {
           measurement_date DATE NOT NULL,
           notes TEXT,
           recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS health_behavior (
@@ -2337,7 +2417,7 @@ app.get('/api/setup/migrate', async (req, res) => {
           behavior_date DATE NOT NULL,
           notes TEXT,
           recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -2358,7 +2438,7 @@ app.get('/api/setup/migrate', async (req, res) => {
         ADD COLUMN IF NOT EXISTS tibc DECIMAL(6,2);
 
       CREATE TABLE IF NOT EXISTS health_summary (
-        user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         overall_health_score INTEGER DEFAULT 0,
         bmi DECIMAL(4,2),
         bmi_category VARCHAR(50),
@@ -2379,7 +2459,7 @@ app.get('/api/setup/migrate', async (req, res) => {
 
       CREATE TABLE IF NOT EXISTS health_assessments (
         assessment_id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         smoking_status VARCHAR(20),
         smoking_years INTEGER,
         smoking_pack_per_day DECIMAL(4,2),
@@ -2428,7 +2508,7 @@ app.get('/api/setup/migrate', async (req, res) => {
 
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         action VARCHAR(100) NOT NULL,
         details JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -3089,13 +3169,12 @@ async function startServer() {
     
     await initDatabase();
     
-    // Run medication tables fix (load CJS module from ESM using createRequire)
+    // Create medication tables directly (avoiding require issue)
     try {
-      const fixMedicationTables = require('./fix-medication-tables');
-      await fixMedicationTables();
-      console.log('🏥 Medication tables fix completed');
+      await createMedicationTables();
+      console.log('🏥 Medication tables created successfully');
     } catch (migrationError) {
-      console.error('⚠️ Medication tables fix failed, but continuing:', migrationError.message);
+      console.error('⚠️ Medication tables creation failed, but continuing:', migrationError.message);
     }
 
     // Medical Image Analysis APIs
