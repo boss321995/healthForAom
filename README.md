@@ -11,7 +11,10 @@ I poured my heart into it — because it mattered to her, and she truly mattered
 Even if our paths now go separate ways, may this project always remain a reminder of the care behind it.
 
 > _For her health, I built a world. Now it holds memories instead._
-> ระบบจัดการสุขภาพส่วนบุคคลแบบครบครัน ที่สร้างด้วย React.js, Node.js, และ PostgreSQL พร้อม AI Analytics และระบบติดตามยาอัจฉริยะ
+
+---
+
+**ระบบจัดการสุขภาพส่วนบุคคลแบบครบครัน ที่สร้างด้วย React.js, Node.js, และ PostgreSQL พร้อม AI Analytics และระบบติดตามยาอัจฉริยะ**
 
 ## ✨ ฟีเจอร์หลัก
 
