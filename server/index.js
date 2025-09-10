@@ -968,42 +968,39 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
     
     let query = `
       SELECT 
-        hm.metric_id,
+        hm.id as metric_id,
         hm.user_id,
         COALESCE(hm.weight_kg, up.weight_kg) AS weight_kg,
-        COALESCE(hm.height_cm, up.height_cm) AS height_cm,
-        COALESCE(
-          hm.bmi,
-          CASE 
-            WHEN COALESCE(hm.height_cm, up.height_cm) IS NOT NULL 
-             AND COALESCE(hm.height_cm, up.height_cm) > 0 
-             AND COALESCE(hm.weight_kg, up.weight_kg) IS NOT NULL
-            THEN ROUND(COALESCE(hm.weight_kg, up.weight_kg) / POWER(COALESCE(hm.height_cm, up.height_cm) / 100.0, 2), 2)
-            ELSE NULL
-          END
-        ) AS bmi,
-        hm.body_fat_percentage,
-        hm.blood_pressure_systolic AS systolic_bp,
-        hm.blood_pressure_diastolic AS diastolic_bp,
-        hm.heart_rate_bpm AS heart_rate,
-        hm.body_temperature_celsius,
-        hm.blood_sugar_mg,
-        hm.uric_acid,
-        hm.alt,
-        hm.ast,
-        hm.hemoglobin,
-        hm.hematocrit,
-        hm.iron,
-        hm.tibc,
-        hm.oxygen_saturation,
-        hm.steps_count,
-        hm.sleep_hours,
-        hm.stress_level,
-        hm.energy_level,
-        hm.mood_score,
+        up.height_cm,
+        CASE 
+          WHEN up.height_cm IS NOT NULL 
+           AND up.height_cm > 0 
+           AND COALESCE(hm.weight_kg, up.weight_kg) IS NOT NULL
+          THEN ROUND(COALESCE(hm.weight_kg, up.weight_kg) / POWER(up.height_cm / 100.0, 2), 2)
+          ELSE NULL
+        END AS bmi,
+        NULL as body_fat_percentage,
+        hm.systolic_bp,
+        hm.diastolic_bp,
+        hm.heart_rate,
+        hm.body_temperature,
+        hm.blood_sugar,
+        NULL as uric_acid,
+        NULL as alt,
+        NULL as ast,
+        NULL as hemoglobin,
+        NULL as hematocrit,
+        NULL as iron,
+        NULL as tibc,
+        NULL as oxygen_saturation,
+        NULL as steps_count,
+        NULL as sleep_hours,
+        NULL as stress_level,
+        NULL as energy_level,
+        NULL as mood_score,
         hm.measurement_date,
         hm.notes,
-        hm.recorded_at
+        hm.created_at as recorded_at
       FROM health_metrics hm
       LEFT JOIN user_profiles up ON up.user_id = hm.user_id
       WHERE hm.user_id = $1`;
