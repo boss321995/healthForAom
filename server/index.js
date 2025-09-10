@@ -153,14 +153,18 @@ async function initDatabase() {
     console.log(`🔄 Database connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
     
     // Create PostgreSQL connection pool
-  db = createDbPool();
-  console.log('🔗 Created PostgreSQL connection pool');
+    db = createDbPool();
+    console.log('🔗 Created PostgreSQL connection pool');
     
     // Test connection
     const client = await db.connect();
     await client.query('SELECT 1');
     client.release();
     console.log('✅ Database connection verified');
+    
+    // Create basic tables if they don't exist
+    await createBasicTables();
+    
     connectionAttempts = 0; // Reset on success
     
   } catch (error) {
@@ -180,6 +184,102 @@ async function initDatabase() {
   }
 }
 
+// Create basic tables
+async function createBasicTables() {
+  try {
+    console.log('📋 Creating basic tables...');
+    
+    // Create users table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create user_profiles table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        profile_id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        first_name VARCHAR(100),
+        last_name VARCHAR(100),
+        birth_date DATE,
+        gender VARCHAR(20),
+        height_cm INTEGER,
+        weight_kg DECIMAL(5,2),
+        blood_type VARCHAR(5),
+        allergies TEXT,
+        medical_conditions TEXT,
+        emergency_contact_name VARCHAR(100),
+        emergency_phone VARCHAR(20),
+        allow_research_data BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create health_metrics table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS health_metrics (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        measurement_date DATE NOT NULL,
+        weight_kg DECIMAL(5,2),
+        systolic_bp INTEGER,
+        diastolic_bp INTEGER,
+        heart_rate INTEGER,
+        blood_sugar DECIMAL(5,2),
+        body_temperature DECIMAL(4,2),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create health_behaviors table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS health_behaviors (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        behavior_date DATE NOT NULL,
+        sleep_hours DECIMAL(3,1),
+        exercise_minutes INTEGER,
+        water_glasses INTEGER,
+        steps INTEGER,
+        stress_level INTEGER CHECK (stress_level BETWEEN 1 AND 10),
+        mood INTEGER CHECK (mood BETWEEN 1 AND 10),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create health_assessments table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS health_assessments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        assessment_date DATE NOT NULL,
+        overall_health INTEGER CHECK (overall_health BETWEEN 1 AND 10),
+        energy_level INTEGER CHECK (energy_level BETWEEN 1 AND 10),
+        appetite INTEGER CHECK (appetite BETWEEN 1 AND 10),
+        pain_level INTEGER CHECK (pain_level BETWEEN 0 AND 10),
+        concerns TEXT,
+        goals TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('✅ Basic tables created successfully');
+  } catch (error) {
+    console.error('❌ Error creating basic tables:', error);
+    throw error;
+  }
+}
+
 // Database reconnection handler
 async function handleDatabaseError(error, operation = 'unknown') {
   console.error(`❌ Database error during ${operation}:`, error.message);
@@ -190,14 +290,6 @@ async function handleDatabaseError(error, operation = 'unknown') {
     console.log('🔄 Attempting to reconnect to database...');
     await initDatabase();
   }
-    // Ensure profile schema compatibility (add missing columns if needed)
-    try {
-      await db.query("ALTER TABLE IF NOT EXISTS user_profiles ADD COLUMN IF NOT EXISTS emergency_phone VARCHAR(20)");
-      console.log('🛠️ Ensured user_profiles.emergency_phone column exists');
-    } catch (schemaErr) {
-      console.error('⚠️ Failed to ensure user_profiles.emergency_phone:', schemaErr.message);
-    }
-
   
   throw error;
 }
