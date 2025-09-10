@@ -525,7 +525,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Find user
     const users = await db.query(
-      'SELECT user_id, username, email, password_hash FROM users WHERE username = $1 OR email = $2',
+      'SELECT id, username, email, password_hash FROM users WHERE username = $1 OR email = $2',
       [username, username]
     );
 
@@ -545,7 +545,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: user.user_id, 
+        userId: user.id, 
         username: user.username, 
         email: user.email
       },
@@ -558,7 +558,7 @@ app.post('/api/auth/login', async (req, res) => {
       message: 'Login successful',
       token,
       user: {
-        userId: user.user_id,
+        userId: user.id,
         username: user.username,
         email: user.email
       }
@@ -579,7 +579,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     // First check if user exists
     const usersResult = await db.query(
-      'SELECT user_id, username, email, created_at FROM users WHERE user_id = $1',
+      'SELECT id, username, email, created_at FROM users WHERE id = $1',
       [req.user.userId]
     );
 
@@ -593,7 +593,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
     const profilesResult = await db.query(
       `SELECT p.*, u.username, u.email 
        FROM user_profiles p 
-       JOIN users u ON p.user_id = u.user_id 
+       JOIN users u ON p.user_id = u.id 
        WHERE p.user_id = $1`,
       [req.user.userId]
     );
@@ -601,7 +601,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
     if (profilesResult.rows.length === 0) {
       // Return basic user info if no profile exists
       return res.json({
-        user_id: user.user_id,
+        user_id: user.id,
         username: user.username,
         email: user.email,
         profile_completed: false,
@@ -713,7 +713,7 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
     
     // Get user basic info
     const userResult = await db.query(
-      'SELECT user_id AS id, username, email, created_at FROM users WHERE user_id = $1',
+      'SELECT id, username, email, created_at FROM users WHERE id = $1',
       [req.user.userId]
     );
     
@@ -3239,7 +3239,7 @@ async function startServer() {
           await db.query(`
             INSERT INTO users (id, username, email, password_hash, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6)
-          `, [user.user_id, user.username, user.email, user.password_hash, user.created_at, user.updated_at]);
+          `, [user.user_id || user.id, user.username, user.email, user.password_hash, user.created_at, user.updated_at]);
         }
         
         // Reset sequence
