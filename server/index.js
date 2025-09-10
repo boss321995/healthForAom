@@ -1046,11 +1046,53 @@ app.get('/api/health-metrics', authenticateToken, async (req, res) => {
     query += ` ORDER BY measurement_date DESC LIMIT $${idx}`;
     params.push(parseInt(limit, 10));
 
+    console.log('🔍 Health metrics query:', query);
+    console.log('🔍 Health metrics params:', params);
+
+    // Debug: Check raw data before join
+    const rawMetrics = await db.query('SELECT COUNT(*) as count FROM health_metrics WHERE user_id = $1', [req.user.userId]);
+    const rawProfiles = await db.query('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = $1', [req.user.userId]);
+    console.log('🔍 Raw health_metrics count:', rawMetrics.rows[0].count);
+    console.log('🔍 Raw user_profiles count:', rawProfiles.rows[0].count);
+
     const metrics = await db.query(query, params);
+    console.log('📊 Health metrics result count:', metrics.rows.length);
+    console.log('📊 Health metrics sample:', metrics.rows.slice(0, 2));
+
     res.json(metrics.rows);
   } catch (error) {
     console.error('Get health metrics error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check database data
+app.get('/api/debug/health-data', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 Debug: Checking health data for user:', req.user.userId);
+
+    // Check health_metrics table
+    const metricsCount = await db.query('SELECT COUNT(*) as count FROM health_metrics WHERE user_id = $1', [req.user.userId]);
+    console.log('📊 Health metrics count:', metricsCount.rows[0].count);
+
+    // Check user_profiles table
+    const profileCount = await db.query('SELECT COUNT(*) as count FROM user_profiles WHERE user_id = $1', [req.user.userId]);
+    console.log('👤 User profiles count:', profileCount.rows[0].count);
+
+    // Get sample data
+    const sampleMetrics = await db.query('SELECT * FROM health_metrics WHERE user_id = $1 LIMIT 3', [req.user.userId]);
+    const sampleProfiles = await db.query('SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 3', [req.user.userId]);
+
+    res.json({
+      userId: req.user.userId,
+      metricsCount: metricsCount.rows[0].count,
+      profileCount: profileCount.rows[0].count,
+      sampleMetrics: sampleMetrics.rows,
+      sampleProfiles: sampleProfiles.rows
+    });
+  } catch (error) {
+    console.error('❌ Debug error:', error);
+    res.status(500).json({ error: 'Debug error', details: error.message });
   }
 });
 
@@ -3087,11 +3129,11 @@ app.post('/api/medical-images/analyze', authenticateToken, upload.single('image'
     // บันทึกผลการวิเคราะห์ลงฐานข้อมูล
     const insertResult = await db.query(`
       INSERT INTO medical_images (
-        user_id, image_type, original_filename, file_size, 
+        user_id, image_type, filename, file_size, 
         analysis_result, confidence_score, risk_level, 
-        primary_finding, findings, recommendations
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING id, confidence_score, risk_level, primary_finding, findings, recommendations, created_at
+        recommendations, ai_notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id, confidence_score, risk_level, recommendations, ai_notes, created_at
     `, [
       userId,
       imageType, 
@@ -3100,9 +3142,8 @@ app.post('/api/medical-images/analyze', authenticateToken, upload.single('image'
       JSON.stringify(analysisResult),
       analysisResult.confidence,
       analysisResult.riskLevel,
-      analysisResult.primaryFinding,
-      JSON.stringify(analysisResult.findings),
-      JSON.stringify(analysisResult.recommendations)
+      JSON.stringify(analysisResult.recommendations),
+      analysisResult.primaryFinding
     ]);
 
     const savedResult = insertResult.rows[0];
@@ -3113,8 +3154,8 @@ app.post('/api/medical-images/analyze', authenticateToken, upload.single('image'
       imageType: imageType,
       confidence: savedResult.confidence_score,
       riskLevel: savedResult.risk_level,
-      primaryFinding: savedResult.primary_finding,
-      findings: savedResult.findings,
+      primaryFinding: savedResult.ai_notes,
+      findings: savedResult.analysis_result,
       recommendations: savedResult.recommendations,
       analyzedAt: savedResult.created_at
     });
@@ -3133,8 +3174,8 @@ app.get('/api/medical-images/history', authenticateToken, async (req, res) => {
 
     const result = await db.query(`
       SELECT 
-        id, image_type, original_filename, confidence_score,
-        risk_level, primary_finding, created_at
+        id, image_type, filename, confidence_score,
+        risk_level, recommendations, created_at
       FROM medical_images 
       WHERE user_id = $1 
       ORDER BY created_at DESC 
@@ -3144,10 +3185,10 @@ app.get('/api/medical-images/history', authenticateToken, async (req, res) => {
     res.json(result.rows.map(row => ({
       id: row.id,
       imageType: row.image_type,
-      filename: row.original_filename,
+      filename: row.filename,
       confidence: row.confidence_score,
       riskLevel: row.risk_level,
-      primaryFinding: row.primary_finding,
+      primaryFinding: row.recommendations,
       createdAt: row.created_at
     })));
 
@@ -3176,11 +3217,11 @@ app.get('/api/medical-images/:id', authenticateToken, async (req, res) => {
     res.json({
       id: analysis.id,
       imageType: analysis.image_type,
-      filename: analysis.original_filename,
+      filename: analysis.filename,
       confidence: analysis.confidence_score,
       riskLevel: analysis.risk_level,
-      primaryFinding: analysis.primary_finding,
-      findings: analysis.findings,
+      primaryFinding: analysis.recommendations,
+      findings: analysis.analysis_result,
       recommendations: analysis.recommendations,
       createdAt: analysis.created_at
     });
