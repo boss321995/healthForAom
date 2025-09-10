@@ -1589,6 +1589,35 @@ const Dashboard = () => {
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <>
+            {/* Welcome Message for New Users */}
+            {healthSummary && (!recentMetrics || recentMetrics.length === 0) && (!userProfile?.profile_completed) && (
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-lg p-6 mb-6">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">🏥</div>
+                  <h3 className="text-xl font-bold text-blue-800 mb-3">
+                    ยินดีต้อนรับสู่ระบบจัดการสุขภาพ!
+                  </h3>
+                  <p className="text-blue-700 mb-4">
+                    เริ่มต้นการจัดการสุขภาพของคุณด้วยการกรอกข้อมูลพื้นฐานและบันทึกค่าสุขภาพครั้งแรก
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                      onClick={() => setActiveTab('profile')}
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                    >
+                      📝 กรอกประวัติส่วนตัว
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('data-entry')}
+                      className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                    >
+                      📊 บันทึกข้อมูลสุขภาพ
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {/* BMI Card */}
               <div className="bg-white/90 backdrop-blur-lg rounded-lg p-4 sm:p-6 border border-blue-200 shadow-lg">

@@ -273,6 +273,30 @@ async function createBasicTables() {
       );
     `);
 
+    // Create health_summary table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS health_summary (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        overall_health_score INTEGER DEFAULT 0,
+        bmi DECIMAL(5,2),
+        bmi_category VARCHAR(50),
+        blood_pressure_status VARCHAR(50),
+        diabetes_risk VARCHAR(50),
+        cardiovascular_risk VARCHAR(50),
+        last_checkup DATE,
+        next_recommended_checkup DATE,
+        health_goals TEXT,
+        medications TEXT,
+        allergies TEXT,
+        medical_conditions TEXT,
+        lifestyle_recommendations TEXT,
+        emergency_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('✅ Basic tables created successfully');
   } catch (error) {
     console.error('❌ Error creating basic tables:', error);
@@ -1050,19 +1074,12 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
     const columnMap = {
       user_id: req.user.userId,
       measurement_date: sanitizeValue(measurement_date),
-      blood_pressure_systolic: sanitizeValue(systolic_bp),
-      blood_pressure_diastolic: sanitizeValue(diastolic_bp),
-      heart_rate_bpm: sanitizeValue(heart_rate),
-      blood_sugar_mg: sanitizeValue(blood_sugar_mg),
-      body_fat_percentage: sanitizeValue(body_fat_percentage),
+      systolic_bp: sanitizeValue(systolic_bp),
+      diastolic_bp: sanitizeValue(diastolic_bp),
+      heart_rate: sanitizeValue(heart_rate),
+      blood_sugar: sanitizeValue(blood_sugar_mg),
+      body_temperature: sanitizeValue(req.body.body_temperature),
       weight_kg: sanitizeValue(weight_kg),
-      uric_acid: sanitizeValue(uric_acid),
-      alt: sanitizeValue(alt),
-      ast: sanitizeValue(ast),
-      hemoglobin: sanitizeValue(hemoglobin),
-      hematocrit: sanitizeValue(hematocrit),
-      iron: sanitizeValue(iron),
-      tibc: sanitizeValue(tibc),
       notes: sanitizeValue(notes)
     };
 
@@ -1088,11 +1105,11 @@ app.post('/api/health-metrics', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No valid fields to insert' });
     }
 
-    const query = `INSERT INTO health_metrics (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING metric_id`;
+    const query = `INSERT INTO health_metrics (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING id`;
     console.log('📊 Inserting health metrics with columns:', cols);
     const result = await db.query(query, values);
 
-    const newId = result.rows[0]?.metric_id || null;
+    const newId = result.rows[0]?.id || null;
     console.log('✅ Health metrics inserted with ID:', newId);
 
     res.status(201).json({ 
