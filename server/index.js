@@ -2101,8 +2101,30 @@ async function createMedicationTables() {
     await db.query('CREATE INDEX IF NOT EXISTS idx_medications_is_active ON medications(is_active);');
     await db.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_user_id ON medication_logs(user_id);');
     await db.query('CREATE INDEX IF NOT EXISTS idx_medication_logs_medication_id ON medication_logs(medication_id);');
+
+    // Create medical_images table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS medical_images (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        filename VARCHAR(255) NOT NULL,
+        file_type VARCHAR(50) NOT NULL,
+        image_type VARCHAR(50) NOT NULL,
+        file_size INTEGER,
+        analysis_result JSONB,
+        confidence_score DECIMAL(5,2),
+        risk_level VARCHAR(20),
+        recommendations TEXT,
+        ai_notes TEXT,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(${userIdColumn}) ON DELETE CASCADE
+      );
+    `);
+
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medical_images_user_id ON medical_images(user_id);');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_medical_images_image_type ON medical_images(image_type);');
     
-    console.log('✅ Medication tables created successfully');
+    console.log('✅ Medication and medical image tables created successfully');
     return true;
   } catch (error) {
     console.error('❌ Medication tables creation error:', error.message);
@@ -2121,7 +2143,7 @@ app.post('/api/setup/migrate', async (req, res) => {
     // Migration SQL
     const migrationSQL = `
       CREATE TABLE IF NOT EXISTS users (
-          user_id SERIAL PRIMARY KEY,
+          id SERIAL PRIMARY KEY,
           username VARCHAR(50) UNIQUE NOT NULL,
           email VARCHAR(100) UNIQUE NOT NULL,
           password_hash VARCHAR(255) NOT NULL,
@@ -2339,7 +2361,7 @@ app.get('/api/setup/migrate', async (req, res) => {
 
     const migrationSQL = `
       CREATE TABLE IF NOT EXISTS users (
-          user_id SERIAL PRIMARY KEY,
+          id SERIAL PRIMARY KEY,
           username VARCHAR(50) UNIQUE NOT NULL,
           email VARCHAR(100) UNIQUE NOT NULL,
           password_hash VARCHAR(255) NOT NULL,
@@ -3168,6 +3190,70 @@ async function startServer() {
     console.log(`🌐 Port: ${PORT}`);
     
     await initDatabase();
+    
+    // Fix users table structure if needed
+    try {
+      console.log('🔧 Checking users table structure...');
+      const usersColumns = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+        AND column_name IN ('id', 'user_id');
+      `);
+      
+      const hasIdColumn = usersColumns.rows.find(row => row.column_name === 'id');
+      const hasUserIdColumn = usersColumns.rows.find(row => row.column_name === 'user_id');
+      
+      if (!hasIdColumn && hasUserIdColumn) {
+        console.log('🔧 Users table needs fixing: user_id -> id');
+        
+        // Backup and fix users table
+        const userData = await db.query('SELECT * FROM users');
+        console.log(`📦 Backing up ${userData.rows.length} users`);
+        
+        // Drop dependent tables
+        await db.query('DROP TABLE IF EXISTS medical_images CASCADE;');
+        await db.query('DROP TABLE IF EXISTS medication_logs CASCADE;');
+        await db.query('DROP TABLE IF EXISTS medications CASCADE;');
+        await db.query('DROP TABLE IF EXISTS health_assessments CASCADE;');
+        await db.query('DROP TABLE IF EXISTS health_behaviors CASCADE;');
+        await db.query('DROP TABLE IF EXISTS health_metrics CASCADE;');
+        await db.query('DROP TABLE IF EXISTS user_profiles CASCADE;');
+        
+        // Recreate users table
+        await db.query('DROP TABLE IF EXISTS users CASCADE;');
+        await db.query(`
+          CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            email VARCHAR(100) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        
+        // Restore data
+        for (const user of userData.rows) {
+          await db.query(`
+            INSERT INTO users (id, username, email, password_hash, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `, [user.user_id, user.username, user.email, user.password_hash, user.created_at, user.updated_at]);
+        }
+        
+        // Reset sequence
+        const maxId = await db.query('SELECT MAX(id) as max_id FROM users');
+        const nextId = (maxId.rows[0].max_id || 0) + 1;
+        await db.query(`SELECT setval('users_id_seq', ${nextId})`);
+        
+        console.log('✅ Users table structure fixed');
+      } else if (hasIdColumn) {
+        console.log('✅ Users table already has correct structure');
+      }
+    } catch (fixError) {
+      console.error('⚠️ Users table fix failed, but continuing:', fixError.message);
+    }
     
     // Create medication tables directly (avoiding require issue)
     try {
