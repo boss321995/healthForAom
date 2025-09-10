@@ -1,8 +1,8 @@
-import React, { useState, useContext, useRef } from 'react';
-import { AuthContext } from '../contexts/AuthContext';
+import React, { useState, useRef } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const MedicalImageAnalysis = () => {
-  const { user } = useContext(AuthContext);
+  const { user } = useAuth();
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
