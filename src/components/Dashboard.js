@@ -333,9 +333,9 @@ const Dashboard = () => {
       console.log('🔑 Token found:', token ? 'Yes' : 'No');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       
-      // Fetch health summary
+      // Fetch health summary with error handling
       try {
-  const summaryResponse = await axios.get('/api/health-summary', { headers });
+        const summaryResponse = await axios.get('/api/health-summary', { headers });
         setHealthSummary(summaryResponse.data);
         console.log('✅ Health summary loaded:', summaryResponse.data);
       } catch (error) {
@@ -347,19 +347,29 @@ const Dashboard = () => {
           window.location.href = '/';
           return;
         }
-        if (error.response?.status !== 404) {
-          console.error('Error fetching health summary:', error);
-        }
+        // Set fallback data
+        setHealthSummary({
+          user_id: user?.userId || 1,
+          overall_health_score: 0,
+          bmi: null,
+          bmi_category: 'Not Available',
+          blood_pressure_status: 'Not Available',
+          last_updated: new Date().toISOString()
+        });
+        console.log('⚠️ Using fallback health summary data');
       }
 
-      // Fetch recent metrics
-  try {
-  const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
-    const normalized = normalizeMetrics(metricsResponse.data || []);
-    setMetricsOnly(normalized);
-    setRecentMetrics(normalized);
-  } catch (error) {
+      // Fetch recent metrics with error handling
+      try {
+        const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
+        const normalized = normalizeMetrics(metricsResponse.data || []);
+        setMetricsOnly(normalized);
+        setRecentMetrics(normalized);
+        console.log('✅ Health metrics loaded:', normalized.length, 'items');
+      } catch (error) {
         console.error('Error fetching health metrics:', error);
+        setRecentMetrics([]);
+        setMetricsOnly([]);
       }
 
       // Fetch medications (with fallback for new feature)
@@ -369,7 +379,6 @@ const Dashboard = () => {
         console.log('✅ Medications loaded:', medicationsResponse.data?.length || 0);
       } catch (error) {
         console.log('ℹ️ Medications API not available yet (new feature):', error.response?.status);
-        // Set empty array for now - feature will work when backend is ready
         setMedications([]);
       }
 
@@ -380,21 +389,46 @@ const Dashboard = () => {
         console.log('✅ Medication history loaded:', medicationLogsResponse.data?.length || 0);
       } catch (error) {
         console.log('ℹ️ Medication logs API not available yet (new feature):', error.response?.status);
-        // Set empty array for now - feature will work when backend is ready
         setMedicationHistory([]);
       }
 
-      // Fetch user profile
+      // Fetch user profile with error handling
       try {
-  const profileResponse = await axios.get('/api/profile', { headers });
+        const profileResponse = await axios.get('/api/profile', { headers });
         setUserProfile(profileResponse.data);
         console.log('✅ User profile loaded:', profileResponse.data);
       } catch (error) {
         console.error('Error fetching user profile:', error);
+        // Set fallback profile data
+        setUserProfile({
+          user_id: user?.userId || 1,
+          username: user?.username || 'User',
+          email: user?.email || '',
+          profile_completed: false,
+          message: 'Profile data not available'
+        });
       }
 
     } catch (error) {
       console.error('Error fetching health data:', error);
+      // Set all fallback data in case of complete failure
+      setHealthSummary({
+        user_id: user?.userId || 1,
+        overall_health_score: 0,
+        bmi: null,
+        bmi_category: 'Not Available',
+        blood_pressure_status: 'Not Available'
+      });
+      setRecentMetrics([]);
+      setMetricsOnly([]);
+      setMedications([]);
+      setMedicationHistory([]);
+      setUserProfile({
+        user_id: user?.userId || 1,
+        username: user?.username || 'User',
+        email: user?.email || '',
+        profile_completed: false
+      });
     } finally {
       setLoading(false);
     }
