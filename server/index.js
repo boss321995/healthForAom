@@ -1293,9 +1293,9 @@ app.get('/api/health-records', authenticateToken, async (req, res) => {
     
     // Get recent health metrics
     const metrics = await db.query(
-      `SELECT 'metric' as record_type, metric_id as id, measurement_date as date, 
-              blood_pressure_systolic as systolic_bp, blood_pressure_diastolic as diastolic_bp, 
-              heart_rate_bpm as heart_rate, blood_sugar_mg, notes,
+      `SELECT 'metric' as record_type, id as metric_id, measurement_date as date, 
+              systolic_bp, diastolic_bp, 
+              heart_rate, blood_sugar, notes,
               'Health Measurement' as category
        FROM health_metrics 
        WHERE user_id = $1 
@@ -1676,11 +1676,11 @@ app.get('/api/health-trends', authenticateToken, async (req, res) => {
     // Get health metrics trends
     const metricsTrends = await db.query(
       `SELECT measurement_date, 
-              AVG(blood_pressure_systolic) as avg_systolic_bp, 
-              AVG(blood_pressure_diastolic) as avg_diastolic_bp, 
-              AVG(heart_rate_bpm) as avg_heart_rate,
-              AVG(blood_sugar_mg) as avg_blood_sugar_mg, 
-              AVG(body_fat_percentage) as avg_body_fat_percentage
+              AVG(systolic_bp) as avg_systolic_bp, 
+              AVG(diastolic_bp) as avg_diastolic_bp, 
+              AVG(heart_rate) as avg_heart_rate,
+              AVG(blood_sugar) as avg_blood_sugar_mg, 
+              AVG(weight_kg) as avg_weight_kg
        FROM health_metrics 
        WHERE user_id = $1 AND measurement_date BETWEEN $2 AND $3
        GROUP BY measurement_date
@@ -2764,14 +2764,13 @@ app.get('/api/debug/health-metrics/overview', authenticateToken, async (req, res
     );
     const latestResult = await db.query(
       `SELECT 
-        metric_id, measurement_date, 
-        blood_pressure_systolic, blood_pressure_diastolic, heart_rate_bpm,
-        weight_kg, height_cm, bmi,
-        blood_sugar_mg, uric_acid, alt, ast, hemoglobin, hematocrit, iron, tibc,
-        recorded_at
+        id as metric_id, measurement_date, 
+        systolic_bp, diastolic_bp, heart_rate,
+        weight_kg, blood_sugar, body_temperature,
+        notes, created_at
        FROM health_metrics 
        WHERE user_id = $1 
-       ORDER BY measurement_date DESC, recorded_at DESC 
+       ORDER BY measurement_date DESC, created_at DESC 
        LIMIT 1`,
       [userId]
     );

@@ -52,13 +52,13 @@ class HealthAnalytics {
     const query = `
       SELECT 
         measurement_date,
-        blood_pressure_systolic as systolic_bp,
-        blood_pressure_diastolic as diastolic_bp,
-        heart_rate_bpm as heart_rate,
-        blood_sugar_mg,
-        body_fat_percentage,
+        systolic_bp,
+        diastolic_bp,
+        heart_rate,
+        blood_sugar,
+        body_temperature,
         weight_kg,
-        recorded_at
+        created_at as recorded_at
       FROM health_metrics 
       WHERE user_id = $1 AND measurement_date >= $2
       ORDER BY measurement_date ASC
@@ -75,14 +75,15 @@ class HealthAnalytics {
     const query = `
       SELECT 
         behavior_date as record_date,
-        exercise_minutes as exercise_duration_minutes,
-        smoking_cigarettes as cigarettes_per_day,
-        alcohol_units as alcohol_units_per_week,
-        sleep_hours as sleep_hours_per_night,
+        exercise_minutes,
+        sleep_hours,
+        water_glasses,
+        steps,
         stress_level,
-        water_intake_ml,
-        recorded_at
-      FROM health_behavior 
+        mood,
+        notes,
+        created_at as recorded_at
+      FROM health_behaviors 
       WHERE user_id = $1 AND behavior_date >= $2
       ORDER BY behavior_date ASC
     `;
