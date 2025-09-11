@@ -91,14 +91,64 @@ const dbConfig = {
   database: process.env.DB_NAME || 'health_management',
   port: process.env.DB_PORT || 5432,
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  max: 10, // connection pool size
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  max: 5, // Reduce pool size for production
+  min: 1, // Minimum connections
+  idleTimeoutMillis: 60000, // 1 minute
+  connectionTimeoutMillis: 30000, // 30 seconds (increased from 2 seconds)
+  acquireTimeoutMillis: 60000, // 1 minute
+  allowExitOnIdle: true,
 };
 
 let db;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 5;
+let isRetryingConnection = false;
+
+// Database connection retry function
+async function retryDatabaseConnection() {
+  if (isRetryingConnection || connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+    return;
+  }
+
+  isRetryingConnection = true;
+  console.log('🔄 Attempting to reconnect to database...');
+
+  try {
+    // Clean up existing pool if it exists
+    if (db) {
+      try {
+        await db.end();
+      } catch (e) {
+        console.error('Error closing existing pool:', e.message);
+      }
+    }
+
+    // Create new pool
+    db = createDbPool();
+
+    // Test connection
+    const client = await Promise.race([
+      db.connect(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timeout')), 30000)
+      )
+    ]);
+
+    try {
+      await client.query('SELECT 1');
+      console.log('✅ Database reconnected successfully');
+      connectionAttempts = 0; // Reset on success
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('❌ Database reconnection failed:', error.message);
+    connectionAttempts++;
+  } finally {
+    isRetryingConnection = false;
+  }
+}
 
 // Helper: create a Pool using DATABASE_URL if present, otherwise use discrete DB_* vars
 function createDbPool() {
@@ -125,8 +175,11 @@ function createDbPool() {
       port,
       ssl,
       max: dbConfig.max,
+      min: dbConfig.min,
       idleTimeoutMillis: dbConfig.idleTimeoutMillis,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+      acquireTimeoutMillis: dbConfig.acquireTimeoutMillis,
+      allowExitOnIdle: dbConfig.allowExitOnIdle,
     });
   }
 
@@ -137,46 +190,73 @@ function createDbPool() {
       connectionString: process.env.DATABASE_URL,
       ssl: (process.env.DB_SSL === 'true' || isProd) ? { rejectUnauthorized: false } : false,
       max: dbConfig.max,
+      min: dbConfig.min,
       idleTimeoutMillis: dbConfig.idleTimeoutMillis,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+      acquireTimeoutMillis: dbConfig.acquireTimeoutMillis,
+      allowExitOnIdle: dbConfig.allowExitOnIdle,
     });
   }
 
   // Last resort: use baked-in defaults (dev)
   console.log(`🗄️ Using default dev DB config (host=${dbConfig.host}, db=${dbConfig.database}, ssl=${!!dbConfig.ssl})`);
-  return new Pool(dbConfig);
+  return new Pool({
+    ...dbConfig,
+    max: 2, // Smaller pool for dev
+    min: 0,
+  });
 }
 
 async function initDatabase() {
   try {
     connectionAttempts++;
     console.log(`🔄 Database connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
-    
+
     // Create PostgreSQL connection pool
     db = createDbPool();
     console.log('🔗 Created PostgreSQL connection pool');
-    
-    // Test connection
-    const client = await db.connect();
-    await client.query('SELECT 1');
-    client.release();
-    console.log('✅ Database connection verified');
-    
+
+    // Test connection with timeout
+    const client = await Promise.race([
+      db.connect(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timeout')), 30000)
+      )
+    ]);
+
+    try {
+      await client.query('SELECT 1');
+      console.log('✅ Database connection verified');
+    } finally {
+      client.release();
+    }
+
     // Create basic tables if they don't exist
     await createBasicTables();
-    
+
     connectionAttempts = 0; // Reset on success
-    
+
   } catch (error) {
     console.error(`❌ Database connection error (attempt ${connectionAttempts}):`, error.message);
-    
+
+    // Clean up failed pool
+    if (db) {
+      try {
+        await db.end();
+      } catch (e) {
+        console.error('Error closing failed pool:', e.message);
+      }
+      db = null;
+    }
+
     if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
-      console.log(`⏳ Retrying in 5 seconds...`);
-      setTimeout(initDatabase, 5000);
+      const retryDelay = Math.min(5000 * connectionAttempts, 30000); // Exponential backoff, max 30s
+      console.log(`⏳ Retrying in ${retryDelay/1000} seconds...`);
+      setTimeout(initDatabase, retryDelay);
     } else {
       console.error('💀 Max connection attempts reached.');
       console.log('🔧 Starting server without database (will retry on first request)');
-      
+
       // Don't exit, just log and continue
       // This allows health checks to work even without DB
       db = null;
@@ -348,6 +428,42 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Database connection check middleware
+const checkDatabaseConnection = async (req, res, next) => {
+  if (!db) {
+    // Try to reconnect if no connection
+    if (!isRetryingConnection) {
+      await retryDatabaseConnection();
+    }
+
+    // If still no connection after retry, return error
+    if (!db) {
+      return res.status(503).json({
+        error: 'Database temporarily unavailable',
+        message: 'Please try again in a few moments'
+      });
+    }
+  }
+
+  // Test connection health
+  try {
+    await db.query('SELECT 1');
+    next();
+  } catch (error) {
+    console.error('Database connection test failed:', error.message);
+
+    // Try to reconnect
+    if (!isRetryingConnection) {
+      setTimeout(retryDatabaseConnection, 1000);
+    }
+
+    return res.status(503).json({
+      error: 'Database connection error',
+      message: 'Please try again in a few moments'
+    });
+  }
+};
+
 // ===============================
 // � Root & Welcome Routes
 // ===============================
@@ -489,7 +605,7 @@ app.get('/api', (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     let dbStatus = 'disconnected';
-    
+
     // Test database connection if available
     if (db) {
       try {
@@ -498,17 +614,30 @@ app.get('/api/health', async (req, res) => {
       } catch (error) {
         console.error('Database health check failed:', error.message);
         dbStatus = 'error';
+
+        // Try to reconnect if not already retrying
+        if (!isRetryingConnection) {
+          setTimeout(retryDatabaseConnection, 1000); // Retry after 1 second
+        }
+      }
+    } else {
+      // Try to establish connection if none exists
+      if (!isRetryingConnection) {
+        setTimeout(retryDatabaseConnection, 1000);
       }
     }
-    
-    res.status(200).json({
+
+    const statusCode = dbStatus === 'connected' ? 200 : 503;
+
+    res.status(statusCode).json({
       status: dbStatus === 'connected' ? 'healthy' : 'partial',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       database: dbStatus,
-      message: dbStatus === 'disconnected' ? 'Database not configured' : 
-               dbStatus === 'error' ? 'Database connection error' : 'All systems operational'
+      connectionAttempts: connectionAttempts,
+      message: dbStatus === 'disconnected' ? 'Database not configured' :
+               dbStatus === 'error' ? 'Database connection error - retrying' : 'All systems operational'
     });
   } catch (error) {
     console.error('❌ Health check failed:', error.message);
@@ -516,7 +645,8 @@ app.get('/api/health', async (req, res) => {
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       error: error.message,
-      database: 'disconnected'
+      database: 'disconnected',
+      connectionAttempts: connectionAttempts
     });
   }
 });
