@@ -10,7 +10,8 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    // App stores token under 'healthToken' (AuthContext uses this key)
+    const token = localStorage.getItem('healthToken') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -28,7 +29,8 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      // Token is invalid, remove it and redirect to login
+      // Token is invalid, remove stored tokens and redirect to login
+      localStorage.removeItem('healthToken');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/';
