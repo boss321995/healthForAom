@@ -1044,7 +1044,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
         await db.query(
           `INSERT INTO user_profiles 
            (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
-            phone, emergency_contact, emergency_phone, medical_conditions, medications, allergies) 
+            phone, emergency_contact_name, emergency_phone, medical_conditions, medications, allergies) 
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
            sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
@@ -1056,7 +1056,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
         await db.query(
           `INSERT INTO user_profiles 
            (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
-            phone, emergency_contact, medical_conditions, medications, allergies) 
+            phone, emergency_contact_name, medical_conditions, medications, allergies) 
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
            sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
@@ -1071,7 +1071,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
         await db.query(
           `UPDATE user_profiles SET 
            full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
-           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
+           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact_name = $8, emergency_phone = $9,
            medical_conditions = $10, medications = $11, allergies = $12, updated_at = CURRENT_TIMESTAMP
            WHERE user_id = $13`,
           [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
@@ -1083,7 +1083,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
         await db.query(
           `UPDATE user_profiles SET 
            full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
-           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8,
+           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact_name = $8,
            medical_conditions = $9, medications = $10, allergies = $11, updated_at = CURRENT_TIMESTAMP
            WHERE user_id = $12`,
           [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
