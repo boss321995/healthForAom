@@ -381,6 +381,17 @@ async function createBasicTables() {
       );
     `);
 
+    // Activity logs table for timeline/history features
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        action VARCHAR(100) NOT NULL,
+        details JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('✅ Basic tables created successfully');
   } catch (error) {
     console.error('❌ Error creating basic tables:', error);
@@ -1017,39 +1028,135 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
     console.log('📊 Original profile data:', req.body);
     console.log('📊 Sanitized profile data:', sanitizedData);
 
-    // Check if profile exists
+    // Normalize numeric fields for DB + comparisons
+    const numericFields = new Set(['height_cm', 'weight_kg']);
+    numericFields.forEach((field) => {
+      if (sanitizedData[field] !== null && sanitizedData[field] !== undefined) {
+        const numericValue = Number(sanitizedData[field]);
+        if (!Number.isNaN(numericValue)) {
+          sanitizedData[field] = numericValue;
+        }
+      }
+    });
+
+    const normalizeForComparison = (value) => {
+      if (value === undefined || value === null) return null;
+      if (value instanceof Date) return value.toISOString().split('T')[0];
+      if (typeof value === 'object') return JSON.stringify(value);
+      return String(value).trim();
+    };
+
+    const normalizeForLog = (value) => {
+      if (value === undefined || value === null) return null;
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    };
+
+    const calculateChanges = (previous, next) => {
+      if (!previous) {
+        const created = {};
+        Object.entries(next).forEach(([key, value]) => {
+          created[key] = {
+            before: null,
+            after: normalizeForLog(value)
+          };
+        });
+        return created;
+      }
+
+      const diff = {};
+      Object.entries(next).forEach(([key, afterValue]) => {
+        const beforeValue = previous[key];
+        if (normalizeForComparison(beforeValue) !== normalizeForComparison(afterValue)) {
+          diff[key] = {
+            before: normalizeForLog(beforeValue),
+            after: normalizeForLog(afterValue)
+          };
+        }
+      });
+      return diff;
+    };
+
+    // Check if profile exists with full data for comparison
     const existingProfiles = await db.query(
-      'SELECT profile_id FROM user_profiles WHERE user_id = $1',
+      'SELECT * FROM user_profiles WHERE user_id = $1',
       [req.user.userId]
     );
+    const existingProfile = existingProfiles.rows[0] || null;
 
-    if (existingProfiles.rows.length === 0) {
-      // Create new profile
-      await db.query(
-        `INSERT INTO user_profiles 
-         (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
-          phone, emergency_contact, emergency_phone, medical_conditions, medications) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
-         sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
-         sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
-         sanitizedData.emergency_phone, sanitizedData.medical_conditions, sanitizedData.medications]
-      );
-      console.log('✅ New profile created for user:', req.user.userId);
-    } else {
-      // Update existing profile
-      await db.query(
-        `UPDATE user_profiles SET 
-         full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
-         height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
-         medical_conditions = $10, medications = $11, updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $12`,
-        [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
-         sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
-         sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
-         sanitizedData.medical_conditions, sanitizedData.medications, req.user.userId]
-      );
-      console.log('✅ Profile updated for user:', req.user.userId);
+    await db.query('BEGIN');
+    try {
+      if (!existingProfile) {
+        // Create new profile
+        const insertResult = await db.query(
+          `INSERT INTO user_profiles 
+           (user_id, full_name, date_of_birth, gender, blood_group, height_cm, weight_kg, 
+            phone, emergency_contact, emergency_phone, medical_conditions, medications) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           RETURNING profile_id`,
+          [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, 
+           sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, 
+           sanitizedData.weight_kg, sanitizedData.phone, sanitizedData.emergency_contact, 
+           sanitizedData.emergency_phone, sanitizedData.medical_conditions, sanitizedData.medications]
+        );
+
+        const createdProfileId = insertResult.rows[0]?.profile_id || null;
+        const creationLog = calculateChanges(null, sanitizedData);
+
+        await db.query(
+          'INSERT INTO activity_logs (user_id, action, details) VALUES ($1, $2, $3)',
+          [
+            req.user.userId,
+            'profile_created',
+            {
+              profile_id: createdProfileId,
+              changed_fields: Object.keys(creationLog),
+              changes: creationLog
+            }
+          ]
+        );
+
+        console.log('✅ New profile created for user:', req.user.userId);
+      } else {
+        // Update existing profile
+        const changes = calculateChanges(existingProfile, sanitizedData);
+
+        await db.query(
+          `UPDATE user_profiles SET 
+           full_name = $1, date_of_birth = $2, gender = $3, blood_group = $4,
+           height_cm = $5, weight_kg = $6, phone = $7, emergency_contact = $8, emergency_phone = $9,
+           medical_conditions = $10, medications = $11, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $12`,
+          [sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, 
+           sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, 
+           sanitizedData.phone, sanitizedData.emergency_contact, sanitizedData.emergency_phone,
+           sanitizedData.medical_conditions, sanitizedData.medications, req.user.userId]
+        );
+
+        if (Object.keys(changes).length > 0) {
+          await db.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES ($1, $2, $3)',
+            [
+              req.user.userId,
+              'profile_updated',
+              {
+                profile_id: existingProfile.profile_id,
+                changed_fields: Object.keys(changes),
+                changes
+              }
+            ]
+          );
+        } else {
+          console.log('ℹ️ Profile update request contained no changes for user:', req.user.userId);
+        }
+
+        console.log('✅ Profile updated for user:', req.user.userId);
+      }
+
+      await db.query('COMMIT');
+    } catch (transactionError) {
+      await db.query('ROLLBACK');
+      throw transactionError;
     }
 
     res.json({ message: 'Profile updated successfully' });
@@ -1114,7 +1221,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
   try {
     console.log('📝 Updating profile for user:', req.user.userId);
     console.log('📊 Profile data:', req.body);
-    
+
     const {
       full_name, date_of_birth, gender, blood_group,
       height_cm, weight_kg, phone, emergency_contact, emergency_phone,
@@ -1152,78 +1259,160 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
     // Choose which emergency contact column to use (prefer emergency_contact_name)
     const ecCol = hasEmergencyContactNameCol ? 'emergency_contact_name' : (hasEmergencyContactCol ? 'emergency_contact' : null);
 
-    // Check if profile exists
-    const existingProfile = await db.query(
-      'SELECT profile_id FROM user_profiles WHERE user_id = $1',
+    const columnMap = {
+      full_name: 'full_name',
+      date_of_birth: 'date_of_birth',
+      gender: 'gender',
+      blood_group: 'blood_group',
+      height_cm: 'height_cm',
+      weight_kg: 'weight_kg',
+      phone: 'phone',
+      emergency_contact: ecCol,
+      emergency_phone: hasEmergencyPhoneCol ? 'emergency_phone' : null,
+      medical_conditions: 'medical_conditions',
+      medications: 'medications',
+      allergies: 'allergies'
+    };
+
+    const normalizeForComparison = (value) => {
+      if (value === undefined || value === null) return null;
+      if (value instanceof Date) return value.toISOString().split('T')[0];
+      if (typeof value === 'object') return JSON.stringify(value);
+      return String(value).trim();
+    };
+
+    const normalizeForLog = (value) => {
+      if (value === undefined || value === null) return null;
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    };
+
+    const calculateChanges = (previousRow, nextData) => {
+      const diff = {};
+      Object.entries(nextData).forEach(([key, afterValue]) => {
+        const columnName = columnMap[key];
+        if (!columnName) return;
+
+        const beforeValue = previousRow ? previousRow[columnName] : null;
+        if (normalizeForComparison(beforeValue) !== normalizeForComparison(afterValue)) {
+          diff[key] = {
+            before: normalizeForLog(beforeValue),
+            after: normalizeForLog(afterValue)
+          };
+        }
+      });
+      return diff;
+    };
+
+    const existingProfileResult = await db.query(
+      'SELECT * FROM user_profiles WHERE user_id = $1',
       [req.user.userId]
     );
+    const existingProfileRow = existingProfileResult.rows[0] || null;
 
-    if (existingProfile.rows.length === 0) {
-      // Create new profile - build column list and values dynamically to match DB
-      const cols = ['user_id', 'full_name', 'date_of_birth', 'gender', 'blood_group', 'height_cm', 'weight_kg', 'phone'];
-      const placeholders = ['$1','$2','$3','$4','$5','$6','$7','$8'];
-      const values = [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, sanitizedData.phone];
+    await db.query('BEGIN');
+    try {
+      if (!existingProfileRow) {
+        // Create new profile - build column list and values dynamically to match DB
+        const cols = ['user_id', 'full_name', 'date_of_birth', 'gender', 'blood_group', 'height_cm', 'weight_kg', 'phone'];
+        const placeholders = ['$1','$2','$3','$4','$5','$6','$7','$8'];
+        const values = [req.user.userId, sanitizedData.full_name, sanitizedData.date_of_birth, sanitizedData.gender, sanitizedData.blood_group, sanitizedData.height_cm, sanitizedData.weight_kg, sanitizedData.phone];
 
-      let idx = values.length + 1;
-      if (ecCol) {
-        cols.push(ecCol);
-        placeholders.push(`$${idx}`);
-        values.push(sanitizedData.emergency_contact);
-        idx++;
-      }
-      if (hasEmergencyPhoneCol) {
-        cols.push('emergency_phone');
-        placeholders.push(`$${idx}`);
-        values.push(sanitizedData.emergency_phone);
-        idx++;
-      }
+        let idx = values.length + 1;
+        if (ecCol) {
+          cols.push(ecCol);
+          placeholders.push(`$${idx}`);
+          values.push(sanitizedData.emergency_contact);
+          idx++;
+        }
+        if (hasEmergencyPhoneCol) {
+          cols.push('emergency_phone');
+          placeholders.push(`$${idx}`);
+          values.push(sanitizedData.emergency_phone);
+          idx++;
+        }
 
-      // append optional fields
-      cols.push('medical_conditions', 'medications', 'allergies');
-      placeholders.push(`$${idx++}`, `$${idx++}`, `$${idx++}`);
-      values.push(sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies);
+        cols.push('medical_conditions', 'medications', 'allergies');
+        placeholders.push(`$${idx++}`, `$${idx++}`, `$${idx++}`);
+        values.push(sanitizedData.medical_conditions, sanitizedData.medications, sanitizedData.allergies);
 
-      const insertQuery = `INSERT INTO user_profiles (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
-      await db.query(insertQuery, values);
-      console.log('✅ New profile created for user:', req.user.userId);
-    } else {
-      // Update existing profile - build SET clauses dynamically
-      const setClauses = [];
-      const values = [];
-      let idx = 1;
+        const insertQuery = `INSERT INTO user_profiles (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING profile_id`;
+        const insertResult = await db.query(insertQuery, values);
+        const createdProfileId = insertResult.rows[0]?.profile_id || null;
 
-      const addField = (colName, val) => {
-        setClauses.push(`${colName} = $${idx}`);
-        values.push(val);
-        idx++;
-      };
+        const creationChanges = calculateChanges(null, sanitizedData);
+        await db.query(
+          'INSERT INTO activity_logs (user_id, action, details) VALUES ($1, $2, $3)',
+          [
+            req.user.userId,
+            'profile_created',
+            {
+              profile_id: createdProfileId,
+              changed_fields: Object.keys(creationChanges),
+              changes: creationChanges
+            }
+          ]
+        );
 
-      addField('full_name', sanitizedData.full_name);
-      addField('date_of_birth', sanitizedData.date_of_birth);
-      addField('gender', sanitizedData.gender);
-      addField('blood_group', sanitizedData.blood_group);
-      addField('height_cm', sanitizedData.height_cm);
-      addField('weight_kg', sanitizedData.weight_kg);
-      addField('phone', sanitizedData.phone);
+        console.log('✅ New profile created for user:', req.user.userId);
+      } else {
+        const changes = calculateChanges(existingProfileRow, sanitizedData);
 
-      if (ecCol) {
+        const setClauses = [];
+        const values = [];
+        let idx = 1;
+
+        const addField = (colName, val) => {
+          if (!colName) return;
+          setClauses.push(`${colName} = $${idx}`);
+          values.push(val);
+          idx++;
+        };
+
+        addField('full_name', sanitizedData.full_name);
+        addField('date_of_birth', sanitizedData.date_of_birth);
+        addField('gender', sanitizedData.gender);
+        addField('blood_group', sanitizedData.blood_group);
+        addField('height_cm', sanitizedData.height_cm);
+        addField('weight_kg', sanitizedData.weight_kg);
+        addField('phone', sanitizedData.phone);
         addField(ecCol, sanitizedData.emergency_contact);
+        addField(hasEmergencyPhoneCol ? 'emergency_phone' : null, sanitizedData.emergency_phone);
+        addField('medical_conditions', sanitizedData.medical_conditions);
+        addField('medications', sanitizedData.medications);
+        addField('allergies', sanitizedData.allergies);
+
+        // Ensure we always update the timestamp even if no other columns changed
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
+
+        const updateQuery = `UPDATE user_profiles SET ${setClauses.join(', ')} WHERE user_id = $${idx}`;
+        values.push(req.user.userId);
+        await db.query(updateQuery, values);
+
+        if (Object.keys(changes).length > 0) {
+          await db.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES ($1, $2, $3)',
+            [
+              req.user.userId,
+              'profile_updated',
+              {
+                profile_id: existingProfileRow.profile_id,
+                changed_fields: Object.keys(changes),
+                changes
+              }
+            ]
+          );
+        } else {
+          console.log('ℹ️ Profile update request contained no changes for user:', req.user.userId);
+        }
+
+        console.log('✅ Profile updated for user:', req.user.userId);
       }
-      if (hasEmergencyPhoneCol) {
-        addField('emergency_phone', sanitizedData.emergency_phone);
-      }
 
-      addField('medical_conditions', sanitizedData.medical_conditions);
-      addField('medications', sanitizedData.medications);
-      addField('allergies', sanitizedData.allergies);
-
-      // updated_at timestamp
-      setClauses.push('updated_at = CURRENT_TIMESTAMP');
-
-      const updateQuery = `UPDATE user_profiles SET ${setClauses.join(', ')} WHERE user_id = $${idx}`;
-      values.push(req.user.userId);
-      await db.query(updateQuery, values);
-      console.log('✅ Profile updated for user:', req.user.userId);
+      await db.query('COMMIT');
+    } catch (profileError) {
+      await db.query('ROLLBACK');
+      throw profileError;
     }
 
     res.json({ message: 'Profile updated successfully' });
@@ -1236,8 +1425,44 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
       stack: error.stack?.split('\n')[0]
     });
     res.status(500).json({ 
-      error: 'Internal server error',
+      error: 'Failed to update profile',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Get profile update history timeline
+app.get('/api/users/profile/history', authenticateToken, async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({
+        error: 'Database connection not available'
+      });
+    }
+
+    const limitParam = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
+
+    const logsResult = await db.query(
+      `SELECT id, action, details, created_at
+       FROM activity_logs
+       WHERE user_id = $1
+         AND action IN ('profile_created', 'profile_updated')
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [req.user.userId, limit]
+    );
+
+    res.json(logsResult.rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      details: row.details || {},
+      created_at: row.created_at
+    })));
+  } catch (error) {
+    console.error('❌ Failed to fetch profile history:', error);
+    res.status(500).json({
+      error: 'Failed to load profile history'
     });
   }
 });

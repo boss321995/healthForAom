@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import HealthAnalytics from './HealthAnalytics';
 import UpdateProfile from './UpdateProfile';
@@ -11,7 +11,7 @@ import MedicalImageAnalysis from './MedicalImageAnalysis';
 import axios from 'axios';
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, token: authToken, loading: authLoading } = useAuth();
   const [healthSummary, setHealthSummary] = useState(null);
   const [recentMetrics, setRecentMetrics] = useState([]);
   // Metrics-only records for vitals (BP/HR/blood sugar/weight), unaffected by behavior entries
@@ -38,6 +38,9 @@ const Dashboard = () => {
   });
   const [medicationHistory, setMedicationHistory] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [aiRecommendations, setAiRecommendations] = useState([]);
+  const [aiStatus, setAiStatus] = useState({ active: false, connected: false, loading: false, lastUpdated: null });
+  const [aiRecommendationError, setAiRecommendationError] = useState(null);
 
   // Helper function to get full name
   const getFullName = () => {
@@ -156,6 +159,203 @@ const Dashboard = () => {
     });
   };
 
+  const getRecordTimestamp = (item) => {
+    if (!item) {
+      return 0;
+    }
+    const raw = item.record_date || item.behavior_date || item.measurement_date || item.created_at || item.date;
+    if (!raw) {
+      return 0;
+    }
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  };
+
+  const isBehaviorEntry = (entry) => {
+    if (!entry) return false;
+    return entry.behavior_id != null ||
+      entry.exercise_duration_minutes != null ||
+      entry.exercise_minutes != null ||
+      entry.exercise_duration != null ||
+      entry.sleep_hours_per_night != null ||
+      entry.sleep_hours != null ||
+      entry.water_intake_liters != null ||
+      entry.water_glasses != null ||
+      entry.smoking_cigarettes != null ||
+      entry.cigarettes_per_day != null ||
+      entry.alcohol_units != null ||
+      entry.alcohol_units_per_week != null ||
+      entry.stress_level != null ||
+      entry.sleep_quality != null ||
+      entry.exercise_frequency != null ||
+      entry.screen_time_hours != null;
+  };
+
+  const behaviorEntries = useMemo(() => {
+    const entries = (recentMetrics || [])
+      .filter((entry) => isBehaviorEntry(entry))
+      .map((entry) => ({
+        ...entry,
+        __timestamp: getRecordTimestamp(entry)
+      }));
+
+    return entries.sort((a, b) => (b.__timestamp || 0) - (a.__timestamp || 0));
+  }, [recentMetrics]);
+
+  const getLatestBehaviorValue = (fields, { numeric = true, allowZero = false } = {}) => {
+    if (!Array.isArray(fields)) {
+      fields = [fields];
+    }
+
+    for (const entry of behaviorEntries) {
+      for (const field of fields) {
+        const value = entry[field];
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+
+        if (!numeric) {
+          return value;
+        }
+
+        const numericValue = Number(value);
+        if (Number.isNaN(numericValue)) {
+          continue;
+        }
+        if (!allowZero && numericValue <= 0) {
+          continue;
+        }
+        return numericValue;
+      }
+    }
+    return null;
+  };
+
+  const formatAiRecommendations = (insightsData) => {
+    if (!insightsData) {
+      return [];
+    }
+
+    const formatted = [];
+
+    const pushTip = (tip) => {
+      if (!tip || !tip.title || !tip.content) {
+        return;
+      }
+      if (!formatted.some(existing => existing.title === tip.title && existing.content === tip.content)) {
+        formatted.push(tip);
+      }
+    };
+
+    const normalizeContent = (value) => {
+      if (value == null) {
+        return '';
+      }
+      if (typeof value === 'string') {
+        return value.trim();
+      }
+      if (typeof value === 'object') {
+        return value.description || value.detail || value.content || JSON.stringify(value);
+      }
+      return String(value);
+    };
+
+    const payload = (insightsData && typeof insightsData === 'object' && !Array.isArray(insightsData))
+      ? (insightsData.data && typeof insightsData.data === 'object' && !Array.isArray(insightsData.data)
+          ? insightsData.data
+          : insightsData)
+      : {};
+
+    const recommendations = Array.isArray(payload.recommendations)
+      ? payload.recommendations
+      : payload.recommendations ? [payload.recommendations] : [];
+
+    recommendations.forEach((item, index) => {
+      const content = normalizeContent(item);
+      if (content) {
+        pushTip({
+          icon: '🤖',
+          title: `AI แนะนำ ${index + 1}`,
+          content,
+          color: 'indigo'
+        });
+      }
+    });
+
+    const improvements = Array.isArray(payload.improvements) ? payload.improvements : [];
+    improvements.forEach((item, index) => {
+      const content = normalizeContent(item);
+      if (content) {
+        pushTip({
+          icon: '📈',
+          title: `โฟกัสเพื่อพัฒนา ${index + 1}`,
+          content,
+          color: 'green'
+        });
+      }
+    });
+
+    const riskFactors = Array.isArray(payload.riskFactors) ? payload.riskFactors : [];
+    riskFactors.forEach((factor, index) => {
+      const label = factor?.label || factor?.title || factor?.name || `ปัจจัยเสี่ยง ${index + 1}`;
+      const description = normalizeContent(factor);
+      const detail = factor?.detail || factor?.description || factor?.recommendation || '';
+      const content = [description, detail].filter(Boolean).join(' - ');
+      if (content) {
+        pushTip({
+          icon: '⚠️',
+          title: label,
+          content,
+          color: 'red'
+        });
+      }
+    });
+
+  const nextActions = Array.isArray(payload.nextActions) ? payload.nextActions : [];
+    nextActions.forEach((action) => {
+      const description = action?.description || normalizeContent(action);
+      if (!description) return;
+      const priority = (action?.priority || '').toLowerCase();
+      let color = 'blue';
+      if (priority === 'high') {
+        color = 'red';
+      } else if (priority === 'medium') {
+        color = 'orange';
+      } else if (priority === 'low') {
+        color = 'green';
+      }
+      pushTip({
+        icon: '🚀',
+        title: action?.action ? `ลงมือทำ: ${action.action}` : 'ภารกิจถัดไป',
+        content: description,
+        color
+      });
+    });
+
+    return formatted;
+  };
+
+  const getTipClassName = (color) => {
+    switch ((color || '').toLowerCase()) {
+      case 'red':
+        return 'bg-red-50 border-red-300 text-red-800';
+      case 'green':
+        return 'bg-green-50 border-green-300 text-green-800';
+      case 'blue':
+        return 'bg-blue-50 border-blue-300 text-blue-800';
+      case 'purple':
+        return 'bg-purple-50 border-purple-300 text-purple-800';
+      case 'orange':
+        return 'bg-orange-50 border-orange-300 text-orange-800';
+      case 'yellow':
+        return 'bg-yellow-50 border-yellow-300 text-yellow-800';
+      case 'indigo':
+        return 'bg-indigo-50 border-indigo-300 text-indigo-800';
+      default:
+        return 'bg-gray-50 border-gray-300 text-gray-800';
+    }
+  };
+
   // Form state for health metrics
   const [metricsForm, setMetricsForm] = useState({
     measurement_date: new Date().toISOString().split('T')[0],
@@ -205,37 +405,87 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    fetchHealthData();
-    fetchDataHistory();
-    updateSystemStatus();
-  }, []);
+    if (authLoading) {
+      return;
+    }
+
+    if (authToken) {
+      fetchHealthData(authToken);
+    } else {
+      fetchDataHistory(null);
+      updateSystemStatus();
+    }
+  }, [authLoading, authToken]);
 
   useEffect(() => {
     updateSystemStatus();
-  }, [user, loading, healthSummary, userProfile]);
+  }, [user, loading, healthSummary, userProfile, authToken, authLoading]);
 
-  const fetchDataHistory = async () => {
+  const fetchDataHistory = async (providedToken = null) => {
     try {
-      const token = localStorage.getItem('healthToken');
-      
-      if (!token || token.startsWith('mock-jwt-token-')) {
+      const tokenToUse = providedToken ?? authToken ?? localStorage.getItem('healthToken');
+
+      if (!tokenToUse || tokenToUse.startsWith('mock-jwt-token-')) {
         const savedHistory = JSON.parse(localStorage.getItem('healthDataHistory') || '[]');
         setDataHistory(savedHistory);
         console.log('📋 Mock data history loaded from localStorage:', savedHistory.length, 'items');
         return;
       }
 
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = { Authorization: `Bearer ${tokenToUse}` };
       
-    // ดึงข้อมูล health metrics ล่าสุด
-  const metricsResponse = await axios.get('/api/health-metrics?limit=50', { headers });
-    const metrics = normalizeMetrics(metricsResponse.data || []);
-    // เก็บ metrics-only สำหรับค่าวัดหลัก
-    setMetricsOnly(metrics);
+      // ดึงข้อมูล health metrics ล่าสุด
+      const metricsResponse = await axios.get('/api/health-metrics?limit=50', { headers });
+      const metrics = normalizeMetrics(metricsResponse.data || []);
+      // เก็บ metrics-only สำหรับค่าวัดหลัก
+      setMetricsOnly(metrics);
       
       // ดึงข้อมูล health behaviors ล่าสุด
-  const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
+      const behaviorsResponse = await axios.get('/api/health-behaviors?limit=50', { headers });
       const behaviors = behaviorsResponse.data || [];
+
+      // ดึงประวัติการอัปเดตโปรไฟล์
+      let profileHistory = [];
+      try {
+        const profileLogsResponse = await axios.get('/api/users/profile/history?limit=50', { headers });
+        const profileLogs = profileLogsResponse.data || [];
+
+        profileHistory = profileLogs.map((log) => {
+          const rawTimestamp = log.created_at || log.timestamp || log.date;
+          let timestamp = rawTimestamp ? new Date(rawTimestamp) : new Date();
+          if (Number.isNaN(timestamp.getTime())) {
+            timestamp = new Date();
+          }
+
+          const changedFields = log.details?.changed_fields || [];
+          const changeSummary = changedFields.length > 0 ? `${changedFields.length} รายการ` : 'ไม่มีรายละเอียด';
+
+          let description = 'อัปเดตข้อมูลส่วนบุคคล';
+          if (log.action === 'profile_created') {
+            description = 'สร้างข้อมูลโปรไฟล์ครั้งแรก';
+          } else if (log.action === 'profile_updated') {
+            description = changedFields.length > 0
+              ? `อัปเดตข้อมูลส่วนบุคคล (${changeSummary})`
+              : 'อัปเดตข้อมูลส่วนบุคคล';
+          }
+
+          return {
+            id: `profile-${log.id}`,
+            type: 'profile',
+            action: log.action,
+            data: log.details || {},
+            description,
+            timestamp,
+            date: timestamp.toLocaleDateString('th-TH'),
+            time: timestamp.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+            changed_fields: changedFields
+          };
+        });
+
+        console.log('🗂️ Profile history loaded:', profileHistory.length, 'items');
+      } catch (profileHistoryError) {
+        console.log('ℹ️ Profile history not available yet:', profileHistoryError.response?.status || profileHistoryError.message);
+      }
       
       // แปลงข้อมูล metrics เป็นรูปแบบประวัติ
       const metricsHistory = metrics.map(metric => ({
@@ -290,7 +540,7 @@ const Dashboard = () => {
       });
       
       // รวมและเรียงลำดับตามเวลา
-      const combinedHistory = [...metricsHistory, ...behaviorsHistory, ...localHistory]
+      const combinedHistory = [...profileHistory, ...metricsHistory, ...behaviorsHistory, ...localHistory]
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
         .slice(0, 100); // เก็บแค่ 100 รายการล่าสุด
 
@@ -318,36 +568,90 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('Error fetching data history:', error);
+
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.warn('🔒 Authorization issue while loading history - logging out');
+        logout();
+        setSubmitMessage({ type: 'error', text: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง' });
+      }
       // Fallback to localStorage
       const savedHistory = JSON.parse(localStorage.getItem('healthDataHistory') || '[]');
       setDataHistory(savedHistory);
     }
   };
 
-  const fetchHealthData = async () => {
+  const formatRelativeTime = (isoString) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now - date;
+      if (Number.isNaN(date.getTime()) || diffMs < 0) {
+        return 'ไม่นานมานี้';
+      }
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      if (diffMinutes < 1) return 'เมื่อครู่';
+      if (diffMinutes < 60) return `${diffMinutes} นาทีที่แล้ว`;
+      const diffHours = Math.floor(diffMinutes / 60);
+      if (diffHours < 24) return `${diffHours} ชั่วโมงที่แล้ว`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays} วันที่แล้ว`;
+      return date.toLocaleDateString('th-TH');
+    } catch (error) {
+      return 'ไม่นานมานี้';
+    }
+  };
+
+  const fetchHealthData = async (providedToken = null) => {
+    const tokenFromStorage = localStorage.getItem('healthToken');
+    const tokenToUse = providedToken ?? authToken ?? tokenFromStorage;
+    const isMockToken = tokenToUse?.startsWith('mock-jwt-token-');
+
     try {
       setLoading(true);
-      
-      // Get auth token
-      const token = localStorage.getItem('healthToken');
-      console.log('🔑 Token found:', token ? 'Yes' : 'No');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      
-      // Fetch health summary with error handling
+      setAiRecommendationError(null);
+
+      if (!tokenToUse) {
+        console.warn('⚠️ ไม่มีโทเค็นสำหรับดึงข้อมูลสุขภาพ');
+        setHealthSummary(null);
+        setRecentMetrics([]);
+        setMetricsOnly([]);
+        setMedications([]);
+        setMedicationHistory([]);
+        setUserProfile(null);
+        setAiRecommendations([]);
+        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        return;
+      }
+
+      if (isMockToken) {
+        console.log('ℹ️ ใช้งานโหมดจำลอง (mock token) - ข้ามการเรียก API ที่ต้องมีการยืนยันตัวตน');
+        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        setAiRecommendations([]);
+        await fetchDataHistory(tokenToUse);
+        return;
+      }
+
+      setAiStatus({ active: true, connected: false, loading: true, lastUpdated: null });
+
+      const headers = { Authorization: `Bearer ${tokenToUse}` };
+
+      const handleAuthError = (error, context) => {
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          console.warn(`🔒 ${context} ล้มเหลวจากการยืนยันตัวตน`);
+          logout();
+          setSubmitMessage({ type: 'error', text: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง' });
+          throw new Error('AUTH_ERROR');
+        }
+      };
+
       try {
         const summaryResponse = await axios.get('/api/health-summary', { headers });
         setHealthSummary(summaryResponse.data);
         console.log('✅ Health summary loaded:', summaryResponse.data);
       } catch (error) {
+        handleAuthError(error, 'Health summary');
         console.error('❌ Health summary error:', error.response?.status, error.response?.data);
-        if (error.response?.status === 403 || error.response?.status === 401) {
-          // Token expired or invalid, clear auth and redirect
-          localStorage.removeItem('healthToken');
-          localStorage.removeItem('user');
-          window.location.href = '/';
-          return;
-        }
-        // Set fallback data
         setHealthSummary({
           user_id: user?.userId || 1,
           overall_health_score: 0,
@@ -356,50 +660,48 @@ const Dashboard = () => {
           blood_pressure_status: 'Not Available',
           last_updated: new Date().toISOString()
         });
-        console.log('⚠️ Using fallback health summary data');
       }
 
-      // Fetch recent metrics with error handling
       try {
-        const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
-        const normalized = normalizeMetrics(metricsResponse.data || []);
-        setMetricsOnly(normalized);
-        setRecentMetrics(normalized);
+  const metricsResponse = await axios.get('/api/health-metrics?limit=5', { headers });
+  const normalized = normalizeMetrics(metricsResponse.data || []);
+  setMetricsOnly(normalized);
+  setRecentMetrics(normalized);
         console.log('✅ Health metrics loaded:', normalized.length, 'items');
       } catch (error) {
-        console.error('Error fetching health metrics:', error);
-        setRecentMetrics([]);
-        setMetricsOnly([]);
+  handleAuthError(error, 'Health metrics');
+  console.error('Error fetching health metrics:', error);
+  setMetricsOnly([]);
+  setRecentMetrics([]);
       }
 
-      // Fetch medications (with fallback for new feature)
       try {
         const medicationsResponse = await axios.get('/api/medications', { headers });
         setMedications(medicationsResponse.data || []);
         console.log('✅ Medications loaded:', medicationsResponse.data?.length || 0);
       } catch (error) {
+        handleAuthError(error, 'Medications');
         console.log('ℹ️ Medications API not available yet (new feature):', error.response?.status);
         setMedications([]);
       }
 
-      // Fetch medication history (with fallback for new feature)
       try {
         const medicationLogsResponse = await axios.get('/api/medication-logs', { headers });
         setMedicationHistory(medicationLogsResponse.data || []);
         console.log('✅ Medication history loaded:', medicationLogsResponse.data?.length || 0);
       } catch (error) {
+        handleAuthError(error, 'Medication logs');
         console.log('ℹ️ Medication logs API not available yet (new feature):', error.response?.status);
         setMedicationHistory([]);
       }
 
-      // Fetch user profile with error handling
       try {
         const profileResponse = await axios.get('/api/profile', { headers });
         setUserProfile(profileResponse.data);
         console.log('✅ User profile loaded:', profileResponse.data);
       } catch (error) {
+        handleAuthError(error, 'Profile');
         console.error('Error fetching user profile:', error);
-        // Set fallback profile data
         setUserProfile({
           user_id: user?.userId || 1,
           username: user?.username || 'User',
@@ -409,9 +711,48 @@ const Dashboard = () => {
         });
       }
 
+      try {
+        const insightsResponse = await axios.get('/api/health-analytics/insights', { headers });
+        const aiData = insightsResponse.data?.data ?? insightsResponse.data;
+        const formatted = formatAiRecommendations(aiData);
+        setAiRecommendations(formatted);
+        setAiStatus({
+          active: true,
+          connected: true,
+          loading: false,
+          lastUpdated: insightsResponse.data?.generatedAt || new Date().toISOString()
+        });
+        console.log('🤖 AI insights loaded:', formatted.length, 'tips');
+      } catch (error) {
+        handleAuthError(error, 'AI insights');
+        console.error('Error fetching AI insights:', error.response?.status, error.response?.data || error.message);
+        const statusCode = error.response?.status;
+        const errorMessage = statusCode === 404
+          ? 'ยังไม่มีข้อมูลเพียงพอสำหรับการวิเคราะห์ AI'
+          : error.response?.data?.error || 'ไม่สามารถเชื่อมต่อบริการ AI ได้ในขณะนี้';
+        setAiRecommendations([]);
+        setAiRecommendationError(errorMessage);
+        setAiStatus({ active: true, connected: false, loading: false, lastUpdated: null });
+      }
+
+      await fetchDataHistory(tokenToUse);
+
     } catch (error) {
+      if (error.message === 'AUTH_ERROR') {
+        console.log('⚠️ Stopped health data fetch due to authorization error');
+        setHealthSummary(null);
+        setRecentMetrics([]);
+        setMetricsOnly([]);
+        setMedications([]);
+        setMedicationHistory([]);
+        setUserProfile(null);
+        setAiRecommendations([]);
+        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        setAiRecommendationError('กรุณาเข้าสู่ระบบใหม่เพื่อโหลดข้อมูลล่าสุด');
+        return;
+      }
+
       console.error('Error fetching health data:', error);
-      // Set all fallback data in case of complete failure
       setHealthSummary({
         user_id: user?.userId || 1,
         overall_health_score: 0,
@@ -429,8 +770,12 @@ const Dashboard = () => {
         email: user?.email || '',
         profile_completed: false
       });
+      setAiRecommendations([]);
+      setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+      setAiRecommendationError('ไม่สามารถโหลดคำแนะนำจาก AI ได้');
     } finally {
       setLoading(false);
+      setAiStatus(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -494,6 +839,16 @@ const Dashboard = () => {
   // ฟังก์ชันสร้างคำแนะนำเฉพาะบุคคล
   const getPersonalizedHealthTips = () => {
     const tips = [];
+
+    const addTip = (tip) => {
+      if (!tip || !tip.title || !tip.content) {
+        return;
+      }
+
+      if (!tips.some(existing => existing.title === tip.title && existing.content === tip.content)) {
+        tips.push(tip);
+      }
+    };
     
     // ตรวจสอบโรคประจำตัวและยาที่ใช้ (ปรับปรุงการตรวจสอบ)
     const medicalConditions = userProfile?.medical_conditions?.toLowerCase() || '';
@@ -526,7 +881,7 @@ const Dashboard = () => {
     
     // คำแนะนำสำหรับผู้ที่มีความดันสูง
     if (hasHypertension || (latestSystolic >= 140 || latestDiastolic >= 90)) {
-      tips.push({
+      addTip({
         icon: '💓',
         title: 'สำหรับผู้ที่มีความดันสูง',
         content: 'ลดเกลือในอาหาร หลีกเลี่ยงอาหารแปรรูป เดินเร็ว 30 นาที/วัน ควบคุมน้ำหนัก จัดการความเครียด',
@@ -535,7 +890,7 @@ const Dashboard = () => {
       
       // ตรวจสอบยาเฉพาะ
       if (medications.includes('amlodipine') || medications.includes('amlopine') || medications.includes('แอมโลดิปีน')) {
-        tips.push({
+        addTip({
           icon: '💊',
           title: 'ผู้ใช้ยา Amlodipine',
           content: 'กินยาตอนเช้าทุกวัน ลุกขึ้นยืนช้าๆ เพื่อป้องกันเวียนหัว ดื่มน้ำเพียงพอ สังเกตอาการบวมที่ข้อเท้า',
@@ -544,7 +899,7 @@ const Dashboard = () => {
       }
       
       // เพิ่มคำแนะนำทั่วไปสำหรับความดันสูง
-      tips.push({
+      addTip({
         icon: '🥬',
         title: 'อาหารสำหรับลดความดัน',
         content: 'กินกล้วย (โปแตสเซียม) ผักใบเขียว ปลา งดเกลือ หลีกเลี่ยงเครื่องดื่มแอลกอฮอล์',
@@ -554,7 +909,7 @@ const Dashboard = () => {
     
     // คำแนะนำสำหรับผู้เบาหวาน
     if (hasDiabetes || (latestBloodSugar && latestBloodSugar > 126)) {
-      tips.push({
+      addTip({
         icon: '🍎',
         title: 'สำหรับผู้เบาหวาน',
         content: 'กินข้าวกล้อง ขนมปังโฮลวีท หลีกเลี่ยงน้ำตาลและแป้ง แบ่งมื้อเล็กๆ 5-6 มื้อ/วัน',
@@ -562,7 +917,7 @@ const Dashboard = () => {
       });
       
       if (medications.includes('metformin') || medications.includes('เมตฟอร์มิน')) {
-        tips.push({
+        addTip({
           icon: '💊',
           title: 'ผู้ใช้ยา Metformin',
           content: 'กินยาพร้อมอาหาร เพื่อลดอาการคลื่นไส้ ตรวจน้ำตาลก่อนและหลังอาหาร',
@@ -573,7 +928,7 @@ const Dashboard = () => {
     
     // คำแนะนำสำหรับผู้รักษาวัณโรค
     if (hasTB) {
-      tips.push({
+      addTip({
         icon: '🫁',
         title: 'สำหรับผู้รักษาวัณโรค',
         content: 'กินยาครบถ้วนตามเวลา พักผ่อนเพียงพอ กินอาหารโปรตีนสูง แยกของใช้ส่วนตัว ใส่หน้ากาก',
@@ -583,7 +938,7 @@ const Dashboard = () => {
     
     // เพิ่มคำแนะนำตามค่าสุขภาพล่าสุด
     if (latestSystolic && latestDiastolic && (latestSystolic >= 140 || latestDiastolic >= 90)) {
-      tips.push({
+      addTip({
         icon: '⚠️',
         title: 'ความดันสูงกว่าปกติ',
         content: `ความดันล่าสุด ${latestSystolic}/${latestDiastolic} mmHg - ควรพักผ่อน ลดความเครียด ออกกำลังกายเบาๆ`,
@@ -593,17 +948,170 @@ const Dashboard = () => {
     
     if (latestBloodSugar && latestBloodSugar > 140) {
       const level = latestBloodSugar > 200 ? 'สูงมาก' : latestBloodSugar > 180 ? 'สูง' : 'สูงเล็กน้อย';
-      tips.push({
+      addTip({
         icon: '📊',
         title: `น้ำตาล${level}`,
         content: `น้ำตาลล่าสุด ${latestBloodSugar} mg/dL - ควรระวังอาหาร ออกกำลังกาย หากสูงมากควรพบแพทย์`,
         color: 'red'
       });
     }
+
+    // คำแนะนำจากพฤติกรรมล่าสุด
+    const latestExerciseMinutes = getLatestBehaviorValue(['exercise_duration_minutes', 'exercise_duration'], { allowZero: false });
+    const exerciseFrequency = getLatestBehaviorValue('exercise_frequency', { numeric: false });
+    if (latestExerciseMinutes !== null) {
+      if (latestExerciseMinutes < 30) {
+        addTip({
+          icon: '🏃‍♀️',
+          title: 'เพิ่มเวลาออกกำลังกาย',
+          content: `ครั้งล่าสุดออกกำลังกาย ${latestExerciseMinutes} นาที ลองเพิ่มให้ถึงอย่างน้อย 30 นาทีเพื่อสุขภาพหัวใจ`,
+          color: 'orange'
+        });
+      } else {
+        addTip({
+          icon: '👏',
+          title: 'ยอดเยี่ยม! ออกกำลังกายครบ',
+          content: `รักษาความสม่ำเสมอของการออกกำลังกาย ${latestExerciseMinutes} นาทีต่อครั้ง เพื่อผลลัพธ์ที่ยั่งยืน`,
+          color: 'green'
+        });
+      }
+    } else if (exerciseFrequency) {
+      const freq = exerciseFrequency.toString().toLowerCase();
+      if (['never', 'rarely', 'seldom', 'ไม่ค่อย', 'ไม่เคย'].some(keyword => freq.includes(keyword))) {
+        addTip({
+          icon: '🏃',
+          title: 'เริ่มขยับร่างกาย',
+          content: 'ยังไม่พบการบันทึกออกกำลังกาย ลองเริ่มจากเดินเร็ว 10-15 นาทีต่อวัน แล้วเพิ่มขึ้นทีละนิด',
+          color: 'orange'
+        });
+      }
+    }
+
+    const sleepHours = getLatestBehaviorValue(['sleep_hours_per_night', 'sleep_hours']);
+    if (sleepHours !== null) {
+      if (sleepHours < 6) {
+        addTip({
+          icon: '🛌',
+          title: 'พักผ่อนไม่พอ',
+          content: `นอนเพียง ${sleepHours} ชั่วโมงต่อคืน พยายามเข้านอนให้เร็วขึ้นและจำกัดการใช้หน้าจอก่อนนอน`,
+          color: 'purple'
+        });
+      } else if (sleepHours < 7) {
+        addTip({
+          icon: '🌙',
+          title: 'เสริมคุณภาพการนอน',
+          content: `นอน ${sleepHours} ชั่วโมง ลองเพิ่มการผ่อนคลายก่อนนอน เช่น หายใจลึกหรือยืดเหยียดเบาๆ`,
+          color: 'purple'
+        });
+      } else {
+        addTip({
+          icon: '😴',
+          title: 'การนอนเพียงพอ',
+          content: `ยอดเยี่ยม! คุณนอน ${sleepHours} ชั่วโมงต่อคืน รักษาตารางการนอนให้สม่ำเสมอ`,
+          color: 'green'
+        });
+      }
+    }
+
+    const sleepQuality = getLatestBehaviorValue('sleep_quality', { numeric: false });
+    if (sleepQuality) {
+      const lower = sleepQuality.toString().toLowerCase();
+      if (['poor', 'low', 'แย่', 'ไม่ดี'].some(keyword => lower.includes(keyword))) {
+        addTip({
+          icon: '🧘‍♀️',
+          title: 'ปรับคุณภาพการนอน',
+          content: 'นอนหลับไม่เต็มคุณภาพ ลองลดคาเฟอีนช่วงบ่าย ทำกิจกรรมผ่อนคลาย และรักษาห้องนอนให้มืดสงบ',
+          color: 'purple'
+        });
+      }
+    }
+
+    const stressLevelRaw = getLatestBehaviorValue('stress_level', { numeric: false });
+    if (stressLevelRaw !== null && stressLevelRaw !== undefined) {
+      const numericStress = Number(stressLevelRaw);
+      const stressLabel = stressLevelRaw.toString().toLowerCase();
+      const isHighStress = (!Number.isNaN(numericStress) && numericStress >= 7) || ['high', 'สูง', 'มาก'].some(keyword => stressLabel.includes(keyword));
+      const isModerateStress = (!Number.isNaN(numericStress) && numericStress >= 4) || ['medium', 'ปานกลาง'].some(keyword => stressLabel.includes(keyword));
+
+      if (isHighStress) {
+        addTip({
+          icon: '🧠',
+          title: 'ลดความเครียดเร่งด่วน',
+          content: 'ระดับความเครียดค่อนข้างสูง ลองฝึกหายใจ 4-7-8 หรือทำสมาธิสั้นๆ 5 นาที รวมถึงออกกำลังกายเบาๆ',
+          color: 'red'
+        });
+      } else if (isModerateStress) {
+        addTip({
+          icon: '🌿',
+          title: 'ดูแลใจให้ผ่อนคลาย',
+          content: 'เพิ่มกิจกรรมผ่อนคลาย เช่น ฟังเพลง อ่านหนังสือ หรือเดินเล่น เพื่อให้อารมณ์สงบลง',
+          color: 'orange'
+        });
+      }
+    }
+
+  const waterGlasses = getLatestBehaviorValue('water_glasses', { allowZero: true });
+    if (waterGlasses !== null) {
+      if (waterGlasses < 6) {
+        addTip({
+          icon: '💧',
+          title: 'เพิ่มการดื่มน้ำ',
+          content: `ดื่มน้ำ ${waterGlasses} แก้วต่อวัน ลองพกขวดน้ำหรือใช้แอปเตือนให้ครบ 8 แก้ว`,
+          color: 'blue'
+        });
+      } else if (waterGlasses >= 8) {
+        addTip({
+          icon: '🚰',
+          title: 'ดื่มน้ำเพียงพอ',
+          content: 'เยี่ยม! รักษาความสม่ำเสมอในการดื่มน้ำอย่างน้อย 8 แก้วต่อวัน',
+          color: 'green'
+        });
+      }
+    }
+
+    const alcoholUnits = getLatestBehaviorValue('alcohol_units', { allowZero: true });
+    if (alcoholUnits !== null && alcoholUnits !== undefined && alcoholUnits > 2) {
+      addTip({
+        icon: '🍺',
+        title: 'จำกัดเครื่องดื่มแอลกอฮอล์',
+        content: `ได้รับแอลกอฮอล์ประมาณ ${alcoholUnits} หน่วยในครั้งล่าสุด ควรจำกัดไม่เกิน 1-2 หน่วยต่อวันและงดอย่างน้อย 2 วัน/สัปดาห์`,
+        color: 'red'
+      });
+    }
+
+    const smokingCigarettes = getLatestBehaviorValue('smoking_cigarettes', { allowZero: true });
+    if (smokingCigarettes !== null && smokingCigarettes !== undefined && smokingCigarettes > 0) {
+      addTip({
+        icon: '🚭',
+        title: 'ลดการสูบบุหรี่',
+        content: `บันทึกการสูบ ${smokingCigarettes} มวน ลองลดจำนวนทีละน้อยและใช้กิจกรรมอื่นแทนเพื่อช่วยเลิก`,
+        color: 'red'
+      });
+    }
+
+    const caffeineCups = getLatestBehaviorValue('caffeine_cups');
+    if (caffeineCups !== null && caffeineCups > 3) {
+      addTip({
+        icon: '☕',
+        title: 'จำกัดคาเฟอีน',
+        content: `ดื่มคาเฟอีนประมาณ ${caffeineCups} แก้วต่อวัน พยายามไม่ให้เกิน 2-3 แก้ว และเว้นระยะก่อนเข้านอน 6 ชั่วโมง`,
+        color: 'orange'
+      });
+    }
+
+    const screenTimeHours = getLatestBehaviorValue('screen_time_hours');
+    if (screenTimeHours !== null && screenTimeHours > 6) {
+      addTip({
+        icon: '📱',
+        title: 'พักสายตาจากหน้าจอ',
+        content: `ใช้งานหน้าจอ ${screenTimeHours} ชั่วโมงต่อวัน ลองกฎ 20-20-20 และกำหนดช่วงงดหน้าจอก่อนนอน`,
+        color: 'orange'
+      });
+    }
     
     // คำแนะนำทั่วไปหากไม่มีโรคประจำตัวหรือค่าผิดปกติ
     if (tips.length === 0) {
-      tips.push(
+      [
         {
           icon: '🥗',
           title: 'อาหารเพื่อสุขภาพ',
@@ -628,7 +1136,7 @@ const Dashboard = () => {
           content: 'ออกกำลังกายอย่างน้อย 150 นาที/สัปดาห์ เดิน วิ่ง ว่ายน้ำ หรือปั่นจักรยาน',
           color: 'orange'
         }
-      );
+      ].forEach(addTip);
     }
     
     return tips;
@@ -783,8 +1291,8 @@ const Dashboard = () => {
       });
       
       // Refresh data
-      console.log('🔄 Refreshing health data...');
-      await fetchHealthData();
+  console.log('🔄 Refreshing health data...');
+  await fetchHealthData(token);
       console.log('✅ Health data refreshed');
       
       // Auto switch to overview after 2 seconds
@@ -938,10 +1446,9 @@ const Dashboard = () => {
         notes: ''
       });
 
-      // Refresh data
-      console.log('🔄 Refreshing health data...');
-      await fetchHealthData();
-      await fetchDataHistory();
+  // Refresh data
+  console.log('🔄 Refreshing health data...');
+  await fetchHealthData(token);
       console.log('✅ Health data refreshed');
       
       // Auto switch to overview after 2 seconds
@@ -1052,7 +1559,7 @@ const Dashboard = () => {
 
   // อัปเดตสถานะระบบ
   const updateSystemStatus = () => {
-    const token = localStorage.getItem('healthToken');
+    const token = authToken ?? localStorage.getItem('healthToken');
     setSystemStatus({
       userConnected: !!user,
       tokenValid: !!token,
@@ -2046,30 +2553,93 @@ const Dashboard = () => {
                 )}
 
                 {/* คำแนะนำสุขภาพส่วนบุคคล */}
-                <div className="space-y-2">
-                  <h4 className="text-blue-900 font-semibold text-sm mb-3 border-b border-blue-200 pb-1">
-                    {userProfile?.medical_conditions || userProfile?.medications ? 'คำแนะนำเฉพาะคุณ' : 'เคล็ดลับสุขภาพ'}
-                  </h4>
-                  <div className="grid grid-cols-1 gap-2">
-                    {getPersonalizedHealthTips().map((tip, index) => (
-                      <div key={index} className={`
-                        ${tip.color === 'red' ? 'bg-red-50 border-red-300 text-red-800' : 
-                          tip.color === 'green' ? 'bg-green-50 border-green-300 text-green-800' :
-                          tip.color === 'blue' ? 'bg-blue-50 border-blue-300 text-blue-800' :
-                          tip.color === 'purple' ? 'bg-purple-50 border-purple-300 text-purple-800' :
-                          tip.color === 'orange' ? 'bg-orange-50 border-orange-300 text-orange-800' :
-                          tip.color === 'yellow' ? 'bg-yellow-50 border-yellow-300 text-yellow-800' :
-                          'bg-gray-50 border-gray-300 text-gray-800'} 
-                        border-2 rounded p-3`}>
-                        <div className="flex items-start space-x-2">
-                          <span className="text-lg flex-shrink-0">{tip.icon}</span>
-                          <div className="flex-1">
-                            <h5 className="font-semibold text-xs mb-1">{tip.title}</h5>
-                            <p className="text-xs leading-relaxed">{tip.content}</p>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-blue-900 font-semibold text-sm mb-3 border-b border-blue-200 pb-1 flex items-center">
+                      <span className="mr-2">👩‍⚕️</span>
+                      {userProfile?.medical_conditions || userProfile?.medications ? 'คำแนะนำเฉพาะคุณ' : 'เคล็ดลับสุขภาพ'}
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {getPersonalizedHealthTips().map((tip, index) => (
+                        <div key={`personal-tip-${index}`} className={`${getTipClassName(tip.color)} border-2 rounded p-3`}>
+                          <div className="flex items-start space-x-2">
+                            <span className="text-lg flex-shrink-0">{tip.icon}</span>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <h5 className="font-semibold text-xs text-blue-900 uppercase tracking-wide">{tip.title}</h5>
+                                {tip.tag && <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">{tip.tag}</span>}
+                              </div>
+                              <p className="text-xs leading-relaxed text-blue-800">{tip.content}</p>
+                            </div>
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-indigo-900 font-semibold text-sm border-b border-indigo-200 pb-1 flex items-center">
+                        <span className="mr-2">🤖</span>
+                        {aiStatus.loading
+                          ? 'AI กำลังวิเคราะห์ข้อมูล...'
+                          : aiStatus.connected
+                            ? 'คำแนะนำจาก AI'
+                            : 'AI Insight (โหมดออฟไลน์)'}
+                      </h4>
+                      {aiStatus.lastUpdated && (
+                        <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                          อัปเดต {formatRelativeTime(aiStatus.lastUpdated)}
+                        </span>
+                      )}
+                    </div>
+
+                    {aiStatus.loading && (
+                      <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-3 text-indigo-700 text-xs flex items-center space-x-2">
+                        <span className="animate-spin">⏳</span>
+                        <span>กำลังประมวลผลข้อมูลสุขภาพล่าสุด...</span>
                       </div>
-                    ))}
+                    )}
+
+                    {!aiStatus.loading && aiRecommendationError && (
+                      <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-3 text-yellow-800 text-xs">
+                        {aiRecommendationError}
+                        <div className="mt-2 text-[10px] text-yellow-700">
+                          ระบบจะลองดึงข้อมูลอีกครั้งเมื่อรีเฟรชหน้า หรือหลังบันทึกข้อมูลใหม่
+                        </div>
+                      </div>
+                    )}
+
+                    {!aiStatus.loading && !aiRecommendationError && aiRecommendations.length === 0 && (
+                      <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-3 text-gray-700 text-xs">
+                        AI ยังไม่มีคำแนะนำเพิ่มเติม เติมข้อมูลสุขภาพให้ครบถ้วนเพื่อรับ insight มากขึ้น
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-2">
+                      {aiRecommendations.slice(0, 6).map((tip, index) => (
+                        <div key={`ai-tip-${index}`} className={`${getTipClassName(tip.color)} border-2 rounded p-3 shadow-sm transition-transform hover:-translate-y-0.5`}>
+                          <div className="flex items-start space-x-2">
+                            <span className="text-lg flex-shrink-0">{tip.icon || '🤖'}</span>
+                            <div className="flex-1">
+                              <h5 className="font-semibold text-xs text-indigo-900 uppercase tracking-wide mb-1">{tip.title}</h5>
+                              <p className="text-xs leading-relaxed text-indigo-800">{tip.content}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {aiRecommendations.length > 6 && (
+                      <div className="mt-2 text-right">
+                        <button
+                          onClick={() => setActiveTab('analysis')}
+                          className="text-[11px] text-indigo-600 hover:text-indigo-800"
+                        >
+                          ดูคำแนะนำทั้งหมด →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
