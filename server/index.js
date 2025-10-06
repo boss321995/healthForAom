@@ -231,8 +231,11 @@ async function initDatabase() {
       client.release();
     }
 
-    // Create basic tables if they don't exist
-    await createBasicTables();
+  // Create basic tables if they don't exist
+  await createBasicTables();
+
+  // Ensure user profile schema matches expected frontend fields
+  await migrateUserProfilesSchema();
 
     connectionAttempts = 0; // Reset on success
 
@@ -281,22 +284,23 @@ async function createBasicTables() {
       );
     `);
 
-    // Create user_profiles table
+    // Create user_profiles table (aligned with frontend form fields)
     await db.query(`
       CREATE TABLE IF NOT EXISTS user_profiles (
         profile_id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        first_name VARCHAR(100),
-        last_name VARCHAR(100),
-        birth_date DATE,
+        full_name VARCHAR(100),
+        date_of_birth DATE,
         gender VARCHAR(20),
-        height_cm INTEGER,
+        blood_group VARCHAR(5),
+        height_cm DECIMAL(5,2),
         weight_kg DECIMAL(5,2),
-        blood_type VARCHAR(5),
-        allergies TEXT,
-        medical_conditions TEXT,
-        emergency_contact_name VARCHAR(100),
+        phone VARCHAR(20),
+        emergency_contact VARCHAR(100),
         emergency_phone VARCHAR(20),
+        medical_conditions TEXT,
+        medications TEXT,
+        allergies TEXT,
         allow_research_data BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -380,6 +384,119 @@ async function createBasicTables() {
     console.log('✅ Basic tables created successfully');
   } catch (error) {
     console.error('❌ Error creating basic tables:', error);
+    throw error;
+  }
+}
+
+async function migrateUserProfilesSchema() {
+  if (!db) {
+    console.warn('⚠️ Cannot migrate user_profiles schema: database not initialized');
+    return;
+  }
+
+  try {
+    console.log('🛠️ Migrating user_profiles schema to match frontend fields...');
+
+    const fetchColumns = async () => {
+      const result = await db.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'user_profiles'
+      `);
+      const map = new Map(result.rows.map(row => [row.column_name, row]));
+      return {
+        map,
+        has: (name) => map.has(name)
+      };
+    };
+
+    let { map: columnMap, has } = await fetchColumns();
+
+    const refreshColumns = async () => {
+      ({ map: columnMap, has } = await fetchColumns());
+    };
+
+    const ensureColumn = async (definition) => {
+      const columnName = definition.split(' ')[0];
+      if (!has(columnName)) {
+        console.log(`➕ Adding column ${columnName}`);
+        await db.query(`ALTER TABLE user_profiles ADD COLUMN ${definition}`);
+        await refreshColumns();
+      }
+    };
+
+    const renameColumn = async (oldName, newName) => {
+      if (!has(newName) && has(oldName)) {
+        console.log(`🔁 Renaming column ${oldName} -> ${newName}`);
+        await db.query(`ALTER TABLE user_profiles RENAME COLUMN ${oldName} TO ${newName}`);
+        await refreshColumns();
+      }
+    };
+
+    // Align column names with frontend expectations
+    await renameColumn('birth_date', 'date_of_birth');
+    await renameColumn('blood_type', 'blood_group');
+    await renameColumn('emergency_contact_name', 'emergency_contact');
+
+    // Ensure required columns exist
+    await ensureColumn('full_name VARCHAR(100)');
+    await ensureColumn('date_of_birth DATE');
+    await ensureColumn('gender VARCHAR(20)');
+    await ensureColumn('blood_group VARCHAR(5)');
+    await ensureColumn('height_cm DECIMAL(5,2)');
+    await ensureColumn('weight_kg DECIMAL(5,2)');
+    await ensureColumn('phone VARCHAR(20)');
+    await ensureColumn('emergency_contact VARCHAR(100)');
+    await ensureColumn('emergency_phone VARCHAR(20)');
+    await ensureColumn('medical_conditions TEXT');
+    await ensureColumn('medications TEXT');
+    await ensureColumn('allergies TEXT');
+
+    // Adjust column types if needed
+    if (has('height_cm') && columnMap.get('height_cm')?.data_type !== 'numeric') {
+      console.log('🔧 Converting height_cm to DECIMAL(5,2)');
+      await db.query(`ALTER TABLE user_profiles ALTER COLUMN height_cm TYPE DECIMAL(5,2) USING height_cm::DECIMAL(5,2)`);
+      await refreshColumns();
+    }
+
+    if (has('weight_kg') && columnMap.get('weight_kg')?.data_type !== 'numeric') {
+      console.log('🔧 Converting weight_kg to DECIMAL(5,2)');
+      await db.query(`ALTER TABLE user_profiles ALTER COLUMN weight_kg TYPE DECIMAL(5,2) USING weight_kg::DECIMAL(5,2)`);
+      await refreshColumns();
+    }
+
+    // Backfill data from legacy columns when available
+    if (has('full_name') && has('first_name')) {
+      await db.query(`
+        UPDATE user_profiles
+        SET full_name = trim(both ' ' FROM concat_ws(' ', first_name, last_name))
+        WHERE (full_name IS NULL OR full_name = '')
+          AND (COALESCE(first_name, '') <> '' OR COALESCE(last_name, '') <> '')
+      `);
+    }
+
+    if (has('blood_group') && has('blood_type')) {
+      await db.query(`
+        UPDATE user_profiles
+        SET blood_group = blood_type
+        WHERE (blood_group IS NULL OR blood_group = '')
+          AND blood_type IS NOT NULL
+      `);
+    }
+
+    if (has('emergency_contact') && has('emergency_contact_name')) {
+      await db.query(`
+        UPDATE user_profiles
+        SET emergency_contact = emergency_contact_name
+        WHERE (emergency_contact IS NULL OR emergency_contact = '')
+          AND emergency_contact_name IS NOT NULL
+      `);
+    }
+
+    console.log('✅ user_profiles schema migration complete');
+  } catch (error) {
+    console.error('❌ Failed to migrate user_profiles schema:', error);
     throw error;
   }
 }
