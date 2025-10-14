@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const FALLBACK_MODEL = 'gemini-1.5-flash';
+const MODEL_FALLBACK_CHAIN = [FALLBACK_MODEL, 'gemini-1.5-flash-001', 'gemini-pro'];
 
 const normalizeModelName = (name) => {
   if (!name || typeof name !== 'string') {
@@ -45,6 +46,56 @@ const DEFAULT_MODEL = normalizeModelName(
     process.env.GOOGLE_GENAI_MODEL ||
     FALLBACK_MODEL
 );
+
+const dedupeModels = (candidates = []) => {
+  const seen = new Set();
+  return candidates
+    .map((candidate) => (candidate ? normalizeModelName(candidate) : null))
+    .filter((candidate) => {
+      if (!candidate) return false;
+      const key = candidate.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const classifyGeminiError = (error, modelName) => {
+  const status = error?.response?.status ?? null;
+  const statusText = error?.response?.statusText ?? null;
+  const responseData = error?.response?.data;
+  const responseMessage =
+    typeof responseData === 'string'
+      ? responseData
+      : responseData?.error?.message || null;
+  const rawMessage = responseMessage || error?.message || 'unknown_error';
+  let reasonCode = 'unknown_error';
+
+  if (status === 404 || /\b404\b/i.test(rawMessage) || /not found/i.test(rawMessage)) {
+    reasonCode = 'model_not_found';
+  } else if (status === 403) {
+    reasonCode = /unregistered callers/i.test(rawMessage) ? 'missing_api_key' : 'permission_denied';
+  } else if (status === 429 || /quota|rate limit/i.test(rawMessage)) {
+    reasonCode = 'rate_limited';
+  }
+
+  const trimmedResponse =
+    typeof responseData === 'string'
+      ? responseData.slice(0, 500)
+      : responseData && typeof responseData === 'object'
+      ? JSON.parse(JSON.stringify(responseData, (key, value) => (typeof value === 'string' ? value.slice(0, 500) : value)))
+      : null;
+
+  return {
+    model: modelName,
+    reason: rawMessage,
+    reasonCode,
+    status,
+    statusText,
+    errorType: error?.name || null,
+    responseData: trimmedResponse,
+  };
+};
 
 const resolveApiKey = () => {
   return (
@@ -396,76 +447,78 @@ export const generateHealthAdvice = async (payload) => {
     };
   }
 
-  try {
-    const modelName = normalizeModelName(payload?.model) || DEFAULT_MODEL;
-    const model = client.getGenerativeModel({ model: modelName });
-    const prompt = buildPrompt(payload);
+  const prompt = buildPrompt(payload);
+  const candidateModels = dedupeModels([
+    payload?.model,
+    DEFAULT_MODEL,
+    ...(Array.isArray(payload?.fallbackModels) ? payload.fallbackModels : []),
+    ...MODEL_FALLBACK_CHAIN,
+  ]);
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response?.text?.() ?? '';
+  for (const modelName of candidateModels) {
+    try {
+      const model = client.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      const text = response?.text?.() ?? '';
 
-    const parsed = extractJson(text);
-    if (!parsed) {
-      logAiEvent('warn', 'Gemini returned an unparseable response', {
+      const parsed = extractJson(text);
+      if (!parsed) {
+        logAiEvent('warn', 'Gemini returned an unparseable response', {
+          model: modelName,
+          rawPreview: text?.slice?.(0, 500) || null,
+        });
+        return {
+          success: false,
+          reason: 'invalid_response_format',
+          rawText: text,
+          model: modelName,
+        };
+      }
+
+      const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
+
+      logAiEvent('info', 'Gemini advice generated', {
         model: modelName,
-        rawPreview: text?.slice?.(0, 500) || null,
+        overviewLength: advice?.overall_assessment?.length || 0,
+        recommendationSections: advice?.recommendations ? Object.keys(advice.recommendations) : [],
       });
+
       return {
-        success: false,
-        reason: 'invalid_response_format',
+        success: true,
+        data: advice,
         rawText: text,
         model: modelName,
       };
+    } catch (error) {
+      const details = classifyGeminiError(error, modelName);
+
+      logAiEvent('error', 'Gemini request failed', details);
+
+      if (details.reasonCode === 'model_not_found') {
+        logAiEvent('warn', 'Retrying Gemini request with fallback model', {
+          attemptedModel: modelName,
+        });
+        continue;
+      }
+
+      return {
+        success: false,
+        reason: details.reasonCode,
+        message: details.reason,
+      };
     }
-
-    const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
-
-    logAiEvent('info', 'Gemini advice generated', {
-      model: modelName,
-      overviewLength: advice?.overall_assessment?.length || 0,
-      recommendationSections: advice?.recommendations ? Object.keys(advice.recommendations) : [],
-    });
-
-    return {
-      success: true,
-      data: advice,
-      rawText: text,
-      model: modelName,
-    };
-  } catch (error) {
-    const status = error?.response?.status || null;
-    const rawMessage = error?.response?.data?.error?.message || error?.message || 'unknown_error';
-    let reasonCode = 'unknown_error';
-
-    if (status === 404) {
-      reasonCode = 'model_not_found';
-    } else if (status === 403) {
-      reasonCode = /unregistered callers/i.test(rawMessage) ? 'missing_api_key' : 'permission_denied';
-    }
-
-    const enriched = {
-      model: DEFAULT_MODEL,
-      reason: rawMessage,
-      reasonCode,
-      status: error?.response?.status || null,
-      statusText: error?.response?.statusText || null,
-      errorType: error?.name || null,
-    };
-
-    if (error?.response?.data) {
-      enriched.responseData = typeof error.response.data === 'string'
-        ? error.response.data.slice(0, 500)
-        : error.response.data;
-    }
-
-    logAiEvent('error', 'Gemini request failed', enriched);
-    return {
-      success: false,
-      reason: reasonCode,
-      message: rawMessage,
-    };
   }
+
+  logAiEvent('error', 'Gemini request failed after all fallback models', {
+    attemptedModels: candidateModels,
+  });
+
+  return {
+    success: false,
+    reason: 'model_resolution_failed',
+    message: 'No supported Gemini model responded successfully',
+  };
 };
 
 export const generateChatResponse = async (payload = {}) => {
@@ -477,73 +530,73 @@ export const generateChatResponse = async (payload = {}) => {
     };
   }
 
-  const modelName = normalizeModelName(payload?.model) || DEFAULT_MODEL;
+  const prompt = buildChatPrompt(payload);
+  const candidateModels = dedupeModels([
+    payload?.model,
+    DEFAULT_MODEL,
+    ...(Array.isArray(payload?.fallbackModels) ? payload.fallbackModels : []),
+    ...MODEL_FALLBACK_CHAIN,
+  ]);
 
-  try {
-    const model = client.getGenerativeModel({ model: modelName });
-    const prompt = buildChatPrompt(payload);
+  for (const modelName of candidateModels) {
+    try {
+      const model = client.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      const text = response?.text?.() ?? '';
+      const trimmed = text.trim();
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response?.text?.() ?? '';
-    const trimmed = text.trim();
+      if (!trimmed) {
+        logAiEvent('warn', 'Gemini chat returned empty response', {
+          model: modelName,
+        });
+        return {
+          success: false,
+          reason: 'empty_response',
+          rawText: text,
+          model: modelName,
+        };
+      }
 
-    if (!trimmed) {
-      logAiEvent('warn', 'Gemini chat returned empty response', {
+      logAiEvent('info', 'Gemini chat reply generated', {
         model: modelName,
+        charLength: trimmed.length,
       });
+
       return {
-        success: false,
-        reason: 'empty_response',
-        rawText: text,
+        success: true,
+        message: trimmed,
         model: modelName,
       };
+    } catch (error) {
+      const details = classifyGeminiError(error, modelName);
+
+      logAiEvent('error', 'Gemini chat request failed', details);
+
+      if (details.reasonCode === 'model_not_found') {
+        logAiEvent('warn', 'Retrying Gemini chat with fallback model', {
+          attemptedModel: modelName,
+        });
+        continue;
+      }
+
+      return {
+        success: false,
+        reason: details.reasonCode,
+        message: details.reason,
+      };
     }
-
-    logAiEvent('info', 'Gemini chat reply generated', {
-      model: modelName,
-      charLength: trimmed.length,
-    });
-
-    return {
-      success: true,
-      message: trimmed,
-      model: modelName,
-    };
-  } catch (error) {
-    const status = error?.response?.status || null;
-    const rawMessage = error?.response?.data?.error?.message || error?.message || 'unknown_error';
-    let reasonCode = 'unknown_error';
-
-    if (status === 404) {
-      reasonCode = 'model_not_found';
-    } else if (status === 403) {
-      reasonCode = /unregistered callers/i.test(rawMessage) ? 'missing_api_key' : 'permission_denied';
-    }
-
-    const enriched = {
-      model: modelName,
-      reason: rawMessage,
-      reasonCode,
-      status,
-      statusText: error?.response?.statusText || null,
-      errorType: error?.name || null,
-    };
-
-    if (error?.response?.data) {
-      enriched.responseData = typeof error.response.data === 'string'
-        ? error.response.data.slice(0, 500)
-        : error.response.data;
-    }
-
-    logAiEvent('error', 'Gemini chat request failed', enriched);
-
-    return {
-      success: false,
-      reason: reasonCode,
-      message: rawMessage,
-    };
   }
+
+  logAiEvent('error', 'Gemini chat failed after all fallback models', {
+    attemptedModels: candidateModels,
+  });
+
+  return {
+    success: false,
+    reason: 'model_resolution_failed',
+    message: 'No supported Gemini chat model responded successfully',
+  };
 };
 
 export default generateHealthAdvice;
