@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const FALLBACK_MODEL = 'gemini-1.5-flash';
 const MODEL_FALLBACK_CHAIN = [FALLBACK_MODEL, 'gemini-1.5-flash-001', 'gemini-pro'];
+const API_VERSION_FALLBACK_CHAIN = ['v1beta', 'v1'];
 
 const normalizeModelName = (name) => {
   if (!name || typeof name !== 'string') {
@@ -47,6 +48,14 @@ const DEFAULT_MODEL = normalizeModelName(
     FALLBACK_MODEL
 );
 
+const parseEnvList = (value) => {
+  if (!value || typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 const dedupeModels = (candidates = []) => {
   const seen = new Set();
   return candidates
@@ -60,7 +69,19 @@ const dedupeModels = (candidates = []) => {
     });
 };
 
-const classifyGeminiError = (error, modelName) => {
+const dedupeApiVersions = (candidates = []) => {
+  const seen = new Set();
+  return candidates
+    .map((candidate) => (candidate && typeof candidate === 'string' ? candidate.trim().toLowerCase() : null))
+    .filter((candidate) => {
+      if (!candidate) return false;
+      if (seen.has(candidate)) return false;
+      seen.add(candidate);
+      return true;
+    });
+};
+
+const classifyGeminiError = (error, modelName, apiVersion) => {
   const status = error?.response?.status ?? null;
   const statusText = error?.response?.statusText ?? null;
   const responseData = error?.response?.data;
@@ -93,6 +114,7 @@ const classifyGeminiError = (error, modelName) => {
     status,
     statusText,
     errorType: error?.name || null,
+    apiVersion: apiVersion || null,
     responseData: trimmedResponse,
   };
 };
@@ -454,64 +476,77 @@ export const generateHealthAdvice = async (payload) => {
     ...(Array.isArray(payload?.fallbackModels) ? payload.fallbackModels : []),
     ...MODEL_FALLBACK_CHAIN,
   ]);
+  const candidateApiVersions = dedupeApiVersions([
+    payload?.apiVersion,
+    ...(Array.isArray(payload?.fallbackApiVersions) ? payload.fallbackApiVersions : []),
+    process.env.GEMINI_API_VERSION,
+    ...parseEnvList(process.env.GEMINI_API_VERSIONS),
+    ...API_VERSION_FALLBACK_CHAIN,
+  ]);
 
   for (const modelName of candidateModels) {
-    try {
-      const model = client.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const text = response?.text?.() ?? '';
+    for (const apiVersion of candidateApiVersions) {
+      try {
+        const model = client.getGenerativeModel({ model: modelName, apiVersion });
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response?.text?.() ?? '';
 
-      const parsed = extractJson(text);
-      if (!parsed) {
-        logAiEvent('warn', 'Gemini returned an unparseable response', {
+        const parsed = extractJson(text);
+        if (!parsed) {
+          logAiEvent('warn', 'Gemini returned an unparseable response', {
+            model: modelName,
+            apiVersion,
+            rawPreview: text?.slice?.(0, 500) || null,
+          });
+          return {
+            success: false,
+            reason: 'invalid_response_format',
+            rawText: text,
+            model: modelName,
+          };
+        }
+
+        const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
+
+        logAiEvent('info', 'Gemini advice generated', {
           model: modelName,
-          rawPreview: text?.slice?.(0, 500) || null,
+          apiVersion,
+          overviewLength: advice?.overall_assessment?.length || 0,
+          recommendationSections: advice?.recommendations ? Object.keys(advice.recommendations) : [],
         });
+
         return {
-          success: false,
-          reason: 'invalid_response_format',
+          success: true,
+          data: advice,
           rawText: text,
           model: modelName,
         };
+      } catch (error) {
+        const details = classifyGeminiError(error, modelName, apiVersion);
+
+        logAiEvent('error', 'Gemini request failed', details);
+
+        if (details.reasonCode === 'model_not_found') {
+          logAiEvent('warn', 'Retrying Gemini request with fallback model/apiVersion', {
+            attemptedModel: modelName,
+            attemptedApiVersion: apiVersion,
+          });
+          continue;
+        }
+
+        return {
+          success: false,
+          reason: details.reasonCode,
+          message: details.reason,
+        };
       }
-
-      const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
-
-      logAiEvent('info', 'Gemini advice generated', {
-        model: modelName,
-        overviewLength: advice?.overall_assessment?.length || 0,
-        recommendationSections: advice?.recommendations ? Object.keys(advice.recommendations) : [],
-      });
-
-      return {
-        success: true,
-        data: advice,
-        rawText: text,
-        model: modelName,
-      };
-    } catch (error) {
-      const details = classifyGeminiError(error, modelName);
-
-      logAiEvent('error', 'Gemini request failed', details);
-
-      if (details.reasonCode === 'model_not_found') {
-        logAiEvent('warn', 'Retrying Gemini request with fallback model', {
-          attemptedModel: modelName,
-        });
-        continue;
-      }
-
-      return {
-        success: false,
-        reason: details.reasonCode,
-        message: details.reason,
-      };
     }
   }
 
   logAiEvent('error', 'Gemini request failed after all fallback models', {
     attemptedModels: candidateModels,
+    attemptedApiVersions: candidateApiVersions,
   });
 
   return {
@@ -537,59 +572,72 @@ export const generateChatResponse = async (payload = {}) => {
     ...(Array.isArray(payload?.fallbackModels) ? payload.fallbackModels : []),
     ...MODEL_FALLBACK_CHAIN,
   ]);
+  const candidateApiVersions = dedupeApiVersions([
+    payload?.apiVersion,
+    ...(Array.isArray(payload?.fallbackApiVersions) ? payload.fallbackApiVersions : []),
+    process.env.GEMINI_API_VERSION,
+    ...parseEnvList(process.env.GEMINI_API_VERSIONS),
+    ...API_VERSION_FALLBACK_CHAIN,
+  ]);
 
   for (const modelName of candidateModels) {
-    try {
-      const model = client.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const text = response?.text?.() ?? '';
-      const trimmed = text.trim();
+    for (const apiVersion of candidateApiVersions) {
+      try {
+        const model = client.getGenerativeModel({ model: modelName, apiVersion });
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response?.text?.() ?? '';
+        const trimmed = text.trim();
 
-      if (!trimmed) {
-        logAiEvent('warn', 'Gemini chat returned empty response', {
+        if (!trimmed) {
+          logAiEvent('warn', 'Gemini chat returned empty response', {
+            model: modelName,
+            apiVersion,
+          });
+          return {
+            success: false,
+            reason: 'empty_response',
+            rawText: text,
+            model: modelName,
+          };
+        }
+
+        logAiEvent('info', 'Gemini chat reply generated', {
           model: modelName,
+          apiVersion,
+          charLength: trimmed.length,
         });
+
         return {
-          success: false,
-          reason: 'empty_response',
-          rawText: text,
+          success: true,
+          message: trimmed,
           model: modelName,
         };
+      } catch (error) {
+        const details = classifyGeminiError(error, modelName, apiVersion);
+
+        logAiEvent('error', 'Gemini chat request failed', details);
+
+        if (details.reasonCode === 'model_not_found') {
+          logAiEvent('warn', 'Retrying Gemini chat with fallback model/apiVersion', {
+            attemptedModel: modelName,
+            attemptedApiVersion: apiVersion,
+          });
+          continue;
+        }
+
+        return {
+          success: false,
+          reason: details.reasonCode,
+          message: details.reason,
+        };
       }
-
-      logAiEvent('info', 'Gemini chat reply generated', {
-        model: modelName,
-        charLength: trimmed.length,
-      });
-
-      return {
-        success: true,
-        message: trimmed,
-        model: modelName,
-      };
-    } catch (error) {
-      const details = classifyGeminiError(error, modelName);
-
-      logAiEvent('error', 'Gemini chat request failed', details);
-
-      if (details.reasonCode === 'model_not_found') {
-        logAiEvent('warn', 'Retrying Gemini chat with fallback model', {
-          attemptedModel: modelName,
-        });
-        continue;
-      }
-
-      return {
-        success: false,
-        reason: details.reasonCode,
-        message: details.reason,
-      };
     }
   }
 
   logAiEvent('error', 'Gemini chat failed after all fallback models', {
     attemptedModels: candidateModels,
+    attemptedApiVersions: candidateApiVersions,
   });
 
   return {
