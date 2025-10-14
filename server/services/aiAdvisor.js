@@ -1,6 +1,18 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const FALLBACK_MODEL = 'gemini-2.5-flash';
+const MODEL_ALIAS_MAP = {
+  'gemini-1.5-pro': 'gemini-2.0-pro',
+  'gemini-1.5-pro-latest': 'gemini-2.0-pro',
+  'gemini-1.5-flash': 'gemini-2.0-flash',
+  'gemini-1.5-flash-latest': 'gemini-2.0-flash',
+  'gemini-flash': 'gemini-2.0-flash',
+  'gemini-flash-latest': 'gemini-2.5-flash',
+  'gemini-flash-lite': 'gemini-2.0-flash-lite',
+  'gemini-flash-lite-latest': 'gemini-2.0-flash-lite',
+  'gemini-pro': 'gemini-2.0-pro',
+  'gemini-pro-latest': 'gemini-2.0-pro',
+};
 const MODEL_FALLBACK_CHAIN = [
   FALLBACK_MODEL,
   'gemini-2.5-flash-lite',
@@ -27,11 +39,12 @@ const normalizeModelName = (name) => {
     return FALLBACK_MODEL;
   }
 
-  if (/-(latest|Latest)$/.test(trimmed)) {
-    return trimmed.replace(/-(latest|Latest)$/, '');
+  const lower = trimmed.toLowerCase();
+  if (MODEL_ALIAS_MAP[lower]) {
+    return MODEL_ALIAS_MAP[lower];
   }
 
-  return trimmed;
+  return lower.startsWith('models/') ? lower.replace(/^models\//, '') : lower;
 };
 
 const logAiEvent = (level, message, details = {}) => {
