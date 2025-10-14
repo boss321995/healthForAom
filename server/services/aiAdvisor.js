@@ -20,7 +20,10 @@ const logAiEvent = (level, message, details = {}) => {
 let cachedClient = null;
 let cachedApiKey = null;
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || process.env.GENERATIVE_AI_MODEL || 'gemini-1.5-flash';
+const DEFAULT_MODEL =
+  process.env.GEMINI_MODEL ||
+  process.env.GENERATIVE_AI_MODEL ||
+  'gemini-1.5-flash-latest';
 
 const resolveApiKey = () => {
   return (
