@@ -9,6 +9,145 @@ import HealthReportPDF_Thai from './HealthReportPDF_Thai';
 import HealthChatbot from './HealthChatbot';
 import axios from 'axios';
 
+const parseTextList = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (item == null) return null;
+        if (typeof item === 'string') return item.trim();
+        if (typeof item === 'object') {
+          const preferred = item.name || item.label || item.title || item.description;
+          if (preferred) return String(preferred).trim();
+          return JSON.stringify(item);
+        }
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  }
+
+  return String(value)
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const createConditionAdvice = (rawCondition) => {
+  if (!rawCondition) return null;
+
+  const condition = rawCondition.toLowerCase();
+
+  if (condition.includes('ความดัน') || condition.includes('hypertension')) {
+    return `ความดันสูง: ลดโซเดียมในอาหาร ออกกำลังกายระดับปานกลาง วัดความดันสม่ำเสมอ และปรึกษาแพทย์หากเวียนศีรษะหรือมีอาการผิดปกติ`;
+  }
+
+  if (condition.includes('เบาหวาน') || condition.includes('diabetes')) {
+    return `เบาหวาน: ควบคุมระดับน้ำตาลด้วยการเลือกอาหารมื้อย่อย วัดน้ำตาลตามแพทย์สั่ง และสังเกตรอยแผลที่หายช้า`;
+  }
+
+  if (condition.includes('ไขมัน') || condition.includes('cholesterol')) {
+    return `ไขมันในเลือดสูง: ลดอาหารทอดและมันสัตว์ เพิ่มผักผลไม้ และตรวจระดับไขมันตามเวลาที่แพทย์นัด`;
+  }
+
+  if (condition.includes('หัวใจ') || condition.includes('cardio')) {
+    return `โรคหัวใจ: จำกัดอาหารเค็มและมัน ออกกำลังกายที่ไม่หักโหม และรีบพบแพทย์เมื่อมีอาการเจ็บหน้าอก หายใจหอบ หรือเหนื่อยง่ายผิดปกติ`;
+  }
+
+  return `ติดตามอาการของ "${rawCondition}" อย่างต่อเนื่อง รักษาตามแพทย์แนะนำ และแจ้งทีมแพทย์หากมีผลข้างเคียงจากยา`;
+};
+
+const buildMedicationSummary = (med) => {
+  if (!med) return null;
+  const name = med.medication_name || med.name || med.title;
+  if (!name) return null;
+
+  const parts = [name.trim()];
+
+  const dosage = med.dosage || med.dose || med.dose_mg || med.amount;
+  if (dosage) {
+    parts.push(`ขนาดยา: ${typeof dosage === 'string' ? dosage.trim() : `${dosage}`}`);
+  }
+
+  const frequency = med.frequency || med.times_per_day || med.frequency_per_day;
+  if (frequency) {
+    parts.push(`ความถี่: ${typeof frequency === 'string' ? frequency.trim() : `${frequency}`}`);
+  }
+
+  const schedule = med.time_schedule || med.timing || med.period;
+  if (schedule) {
+    parts.push(`ช่วงเวลา: ${typeof schedule === 'string' ? schedule.trim() : `${schedule}`}`);
+  }
+
+  return parts.join(' • ');
+};
+
+const buildConditionBasedTips = (userProfile, medications) => {
+  const tips = [];
+
+  const medicalConditions = parseTextList(userProfile?.medical_conditions);
+  if (medicalConditions.length > 0) {
+    const adviceList = medicalConditions
+      .map((condition) => createConditionAdvice(condition))
+      .filter(Boolean);
+    if (adviceList.length > 0) {
+      tips.push({
+        icon: '🩺',
+        title: 'คำแนะนำสำหรับโรคประจำตัว',
+        items: Array.from(new Set(adviceList)),
+        color: 'purple'
+      });
+    }
+  }
+
+  const medicationCards = [];
+
+  let normalizedMedications = [];
+  if (Array.isArray(medications)) {
+    normalizedMedications = medications;
+  } else if (medications) {
+    const medicationList = parseTextList(medications);
+    normalizedMedications = medicationList.map((item) => ({ medication_name: item }));
+  }
+
+  if (normalizedMedications.length > 0) {
+    const medicationSummaries = normalizedMedications
+      .map((med) => buildMedicationSummary(med))
+      .filter(Boolean);
+    if (medicationSummaries.length > 0) {
+      medicationCards.push({
+        icon: '💊',
+        title: 'ยาที่ใช้อยู่',
+        items: medicationSummaries,
+        color: 'blue'
+      });
+    }
+  }
+
+  if (medicationCards.length === 0) {
+    const profileMedicationList = parseTextList(userProfile?.medications);
+    if (profileMedicationList.length > 0) {
+      medicationCards.push({
+        icon: '💊',
+        title: 'ยาที่ใช้อยู่',
+        items: profileMedicationList,
+        color: 'blue'
+      });
+    }
+  }
+
+  if (medicalConditions.length > 0 || medicationCards.length > 0) {
+    medicationCards.push({
+      icon: '⚕️',
+      title: 'ข้อควรระวังเกี่ยวกับยา',
+      content: 'หากมียาใหม่ที่ยังไม่คุ้นเคย ให้ตรวจสอบการโต้ตอบกับยาตัวอื่นและแจ้งแพทย์ทันทีเมื่อมีอาการผิดปกติ เช่น เวียนศีรษะ บวม หรือหายใจไม่สะดวก',
+      color: 'orange'
+    });
+  }
+
+  return [...tips, ...medicationCards];
+};
+
 const Dashboard = () => {
   const { user, logout, token: authToken, loading: authLoading } = useAuth();
   const [healthSummary, setHealthSummary] = useState(null);
@@ -216,7 +355,10 @@ const Dashboard = () => {
     return entries.sort((a, b) => (b.__timestamp || 0) - (a.__timestamp || 0));
   }, [recentMetrics]);
 
-  const conditionBasedTips = useMemo(() => buildConditionBasedTips(), [userProfile, medications]);
+  const conditionBasedTips = useMemo(
+    () => buildConditionBasedTips(userProfile, medications),
+    [userProfile, medications]
+  );
 
   const combinedAiTips = useMemo(() => {
     if (aiRecommendations && aiRecommendations.length > 0) {
@@ -520,144 +662,7 @@ const Dashboard = () => {
     }
   };
 
-  const parseTextList = (value) => {
-    if (!value) return [];
-
-    if (Array.isArray(value)) {
-      return value
-        .map((item) => {
-          if (item == null) return null;
-          if (typeof item === 'string') return item.trim();
-          if (typeof item === 'object') {
-            const preferred = item.name || item.label || item.title || item.description;
-            if (preferred) return String(preferred).trim();
-            return JSON.stringify(item);
-          }
-          return String(item).trim();
-        })
-        .filter(Boolean);
-    }
-
-    return String(value)
-      .split(/[\n,;]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-  };
-
-  const createConditionAdvice = (rawCondition) => {
-    if (!rawCondition) return null;
-
-    const condition = rawCondition.toLowerCase();
-
-    if (condition.includes('ความดัน') || condition.includes('hypertension')) {
-      return `ความดันสูง: ลดโซเดียมในอาหาร ออกกำลังกายระดับปานกลาง วัดความดันสม่ำเสมอ และปรึกษาแพทย์หากเวียนศีรษะหรือมีอาการผิดปกติ`;
-    }
-
-    if (condition.includes('เบาหวาน') || condition.includes('diabetes')) {
-      return `เบาหวาน: ควบคุมระดับน้ำตาลด้วยการเลือกอาหารมื้อย่อย วัดน้ำตาลตามแพทย์สั่ง และสังเกตรอยแผลที่หายช้า`;
-    }
-
-    if (condition.includes('ไขมัน') || condition.includes('cholesterol')) {
-      return `ไขมันในเลือดสูง: ลดอาหารทอดและมันสัตว์ เพิ่มผักผลไม้ และตรวจระดับไขมันตามเวลาที่แพทย์นัด`;
-    }
-
-    if (condition.includes('หัวใจ') || condition.includes('cardio')) {
-      return `โรคหัวใจ: จำกัดอาหารเค็มและมัน ออกกำลังกายที่ไม่หักโหม และรีบพบแพทย์เมื่อมีอาการเจ็บหน้าอก หายใจหอบ หรือเหนื่อยง่ายผิดปกติ`;
-    }
-
-    return `ติดตามอาการของ "${rawCondition}" อย่างต่อเนื่อง รักษาตามแพทย์แนะนำ และแจ้งทีมแพทย์หากมีผลข้างเคียงจากยา`;
-  };
-
-  const buildMedicationSummary = (med) => {
-    if (!med) return null;
-    const name = med.medication_name || med.name || med.title;
-    if (!name) return null;
-
-    const parts = [name.trim()];
-
-    const dosage = med.dosage || med.dose || med.dose_mg || med.amount;
-    if (dosage) {
-      parts.push(`ขนาดยา: ${typeof dosage === 'string' ? dosage.trim() : `${dosage}`}`);
-    }
-
-    const frequency = med.frequency || med.times_per_day || med.frequency_per_day;
-    if (frequency) {
-      parts.push(`ความถี่: ${typeof frequency === 'string' ? frequency.trim() : `${frequency}`}`);
-    }
-
-    const schedule = med.time_schedule || med.timing || med.period;
-    if (schedule) {
-      parts.push(`ช่วงเวลา: ${typeof schedule === 'string' ? schedule.trim() : `${schedule}`}`);
-    }
-
-    return parts.join(' • ');
-  };
-
-  const buildConditionBasedTips = () => {
-    const tips = [];
-
-    const medicalConditions = parseTextList(userProfile?.medical_conditions);
-    if (medicalConditions.length > 0) {
-      const adviceList = medicalConditions
-        .map((condition) => createConditionAdvice(condition))
-        .filter(Boolean);
-      if (adviceList.length > 0) {
-        tips.push({
-          icon: '🩺',
-          title: 'คำแนะนำสำหรับโรคประจำตัว',
-          items: Array.from(new Set(adviceList)),
-          color: 'purple'
-        });
-      }
-    }
-
-    const medicationCards = [];
-
-    let normalizedMedications = [];
-    if (Array.isArray(medications)) {
-      normalizedMedications = medications;
-    } else if (medications) {
-      const medicationList = parseTextList(medications);
-      normalizedMedications = medicationList.map((item) => ({ medication_name: item }));
-    }
-
-    if (normalizedMedications.length > 0) {
-      const medicationSummaries = normalizedMedications
-        .map((med) => buildMedicationSummary(med))
-        .filter(Boolean);
-      if (medicationSummaries.length > 0) {
-        medicationCards.push({
-          icon: '💊',
-          title: 'ยาที่ใช้อยู่',
-          items: medicationSummaries,
-          color: 'blue'
-        });
-      }
-    }
-
-    if (medicationCards.length === 0) {
-      const profileMedicationList = parseTextList(userProfile?.medications);
-      if (profileMedicationList.length > 0) {
-        medicationCards.push({
-          icon: '💊',
-          title: 'ยาที่ใช้อยู่',
-          items: profileMedicationList,
-          color: 'blue'
-        });
-      }
-    }
-
-    if (medicalConditions.length > 0 || medicationCards.length > 0) {
-      medicationCards.push({
-        icon: '⚕️',
-        title: 'ข้อควรระวังเกี่ยวกับยา',
-        content: 'หากมียาใหม่ที่ยังไม่คุ้นเคย ให้ตรวจสอบการโต้ตอบกับยาตัวอื่นและแจ้งแพทย์ทันทีเมื่อมีอาการผิดปกติ เช่น เวียนศีรษะ บวม หรือหายใจไม่สะดวก',
-        color: 'orange'
-      });
-    }
-
-    return [...tips, ...medicationCards];
-  };
+  
 
   // Form state for health metrics
   const [metricsForm, setMetricsForm] = useState({
