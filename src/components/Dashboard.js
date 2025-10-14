@@ -613,8 +613,16 @@ const Dashboard = () => {
 
     const medicationCards = [];
 
-    if (medications && medications.length > 0) {
-      const medicationSummaries = medications
+    let normalizedMedications = [];
+    if (Array.isArray(medications)) {
+      normalizedMedications = medications;
+    } else if (medications) {
+      const medicationList = parseTextList(medications);
+      normalizedMedications = medicationList.map((item) => ({ medication_name: item }));
+    }
+
+    if (normalizedMedications.length > 0) {
+      const medicationSummaries = normalizedMedications
         .map((med) => buildMedicationSummary(med))
         .filter(Boolean);
       if (medicationSummaries.length > 0) {
