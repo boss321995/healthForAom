@@ -5,6 +5,7 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import HealthAnalytics from './healthAnalytics.js';
+import { generateChatResponse } from './services/aiAdvisor.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -2417,6 +2418,83 @@ app.get('/api/health-analytics/insights', authenticateToken, async (req, res) =>
     res.status(500).json({
       success: false,
       error: 'Failed to generate health insights'
+    });
+  }
+});
+
+app.post('/api/health-analytics/chat', authenticateToken, async (req, res) => {
+  if (!db) {
+    return res.status(503).json({
+      success: false,
+      reason: 'database_unavailable'
+    });
+  }
+
+  const { message, history = [] } = req.body || {};
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({
+      success: false,
+      reason: 'message_required'
+    });
+  }
+
+  try {
+    const userId = req.user.userId;
+    const analytics = new HealthAnalytics(db);
+
+    const [profile, healthHistoryRaw, behaviorHistoryRaw, medications] = await Promise.all([
+      analytics.getUserProfile(userId),
+      analytics.getHealthHistory(userId, '6months'),
+      analytics.getBehaviorHistory(userId, '6months'),
+      analytics.getActiveMedications(userId)
+    ]);
+
+    const healthHistory = analytics.normalizeHealthHistory(healthHistoryRaw, profile || {});
+    const behaviorHistory = analytics.normalizeBehaviorHistory(behaviorHistoryRaw);
+    const profileConditions = analytics.parseList(profile?.medical_conditions);
+    const profileMedications = analytics.parseList(profile?.medications);
+
+    const normalizedHistory = Array.isArray(history)
+      ? history
+          .map((item) => ({
+            role: item?.role === 'assistant' ? 'assistant' : 'user',
+            content: typeof item?.content === 'string' ? item.content : ''
+          }))
+          .filter((item) => item.content && item.content.trim())
+          .slice(-10)
+      : [];
+
+    const aiResult = await generateChatResponse({
+      message: message.trim(),
+      history: normalizedHistory,
+      profile,
+      healthHistory,
+      behaviorHistory,
+      medications,
+      profileMedications,
+      profileConditions,
+    });
+
+    if (aiResult.success) {
+      return res.json({
+        success: true,
+        message: aiResult.message,
+        model: aiResult.model,
+        mode: 'ai'
+      });
+    }
+
+    return res.json({
+      success: false,
+      reason: aiResult.reason || 'unknown_error',
+      rawText: aiResult.rawText || null,
+      mode: 'fallback'
+    });
+  } catch (error) {
+    console.error('❌ Chat assistant error:', error);
+    return res.status(500).json({
+      success: false,
+      reason: 'chat_generation_failed'
     });
   }
 });

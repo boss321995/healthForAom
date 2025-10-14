@@ -1,6 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 
 const HealthChatbot = ({ userProfile, recentMetrics = [] }) => {
+  const { token: authToken } = useAuth();
+  const [assistantStatus, setAssistantStatus] = useState({
+    mode: 'online',
+    engine: 'Gemini',
+    reason: null
+  });
+  const [lastAiError, setLastAiError] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -42,6 +51,48 @@ const HealthChatbot = ({ userProfile, recentMetrics = [] }) => {
     'ภูมิแพ้อาหาร',
     'การฟื้นฟูร่างกาย'
   ];
+
+  const getAuthToken = () => {
+    return authToken ?? localStorage.getItem('healthToken');
+  };
+
+  const buildConversationHistory = (historyMessages = [], newUserText = '') => {
+    const trimmed = newUserText.trim();
+    const recentHistory = historyMessages
+      .slice(-8)
+      .map((msg) => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      }));
+
+    if (trimmed) {
+      recentHistory.push({ role: 'user', content: trimmed });
+    }
+
+    return recentHistory;
+  };
+
+  const requestAiResponse = async (userText, conversation) => {
+    const token = getAuthToken();
+    if (!token) {
+      throw new Error('missing_token');
+    }
+
+    const response = await axios.post(
+      '/api/health-analytics/chat',
+      {
+        message: userText,
+        history: conversation
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+
+    return response.data;
+  };
 
   const getHealthAdvice = (userMessage) => {
     const message = userMessage.toLowerCase();
@@ -932,31 +983,91 @@ const HealthChatbot = ({ userProfile, recentMetrics = [] }) => {
     return 'ขอบคุณสำหรับคำถามครับ! ผมให้ข้อมูลทั่วไปเท่านั้น สำหรับการใช้ยาเฉพาะบุคคล แนะนำให้ปรึกษาเภสัชกรหรือแพทย์ครับ \n\n📞 หากมีอาการฉุกเฉิน โทร 1669 \n🏥 หากต้องการคำแนะนำเฉพาะบุคคล ควรพบแพทย์ \n💊 ข้อมูลยา: ปรึกษาเภสัชกร\n\n💡 ลองถามเกี่ยวกับ:\n• "สุขภาพของฉัน" - ดูข้อมูลส่วนตัว\n• "ลดน้ำหนัก" - วิธีลดน้ำหนักที่ถูกต้อง\n• "ออกกำลังกาย" - แนะนำการออกกำลัง\n• "อาหารเบาหวาน" - อาหารสำหรับโรคต่างๆ';
   };
 
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isTyping) {
+      return;
+    }
+
+    const trimmedText = inputText.trim();
 
     const userMessage = {
       id: Date.now(),
-      text: inputText,
+      text: trimmedText,
       sender: 'user',
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const conversationPayload = buildConversationHistory(messages, trimmedText);
+
+    setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setIsTyping(true);
+    setLastAiError(null);
 
-    // จำลองการพิมพ์ของบอท
-    setTimeout(() => {
+    try {
+      const aiResponse = await requestAiResponse(trimmedText, conversationPayload);
+      const aiMessage = aiResponse?.message ? aiResponse.message.trim() : '';
+
+      if (aiResponse?.success && aiMessage) {
+        setAssistantStatus({
+          mode: 'online',
+          engine: aiResponse.model || 'Gemini',
+          reason: null
+        });
+
+        const botResponse = {
+          id: Date.now() + 1,
+          text: aiMessage,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+
+        setMessages((prev) => [...prev, botResponse]);
+      } else {
+        const reason = aiResponse?.reason || 'unknown';
+        setAssistantStatus((prev) => ({
+          ...prev,
+          mode: 'fallback',
+          reason
+        }));
+
+        const fallbackText = getHealthAdvice(trimmedText);
+        const note = 'ขออภัยครับ ระบบ AI ยังไม่พร้อม จึงแสดงคำแนะนำทั่วไปตามข้อมูลที่มีอยู่ในระบบ';
+        const botResponse = {
+          id: Date.now() + 1,
+          text: `${note}\n\n${fallbackText}`,
+          sender: 'bot',
+          timestamp: new Date()
+        };
+
+        setMessages((prev) => [...prev, botResponse]);
+      }
+    } catch (error) {
+      const reason = error?.message || 'unknown_error';
+      setAssistantStatus((prev) => ({
+        ...prev,
+        mode: 'fallback',
+        reason
+      }));
+      setLastAiError(reason);
+
+      const fallbackText = getHealthAdvice(trimmedText);
+      const note =
+        reason === 'missing_token'
+          ? 'กรุณาเข้าสู่ระบบเพื่อใช้ระบบผู้ช่วย AI'
+          : 'ขออภัยครับ ระบบ AI ตอบสนองช้ากว่าปกติ จึงแสดงคำแนะนำทั่วไปจากข้อมูลที่มีอยู่ในระบบ';
+
       const botResponse = {
         id: Date.now() + 1,
-        text: getHealthAdvice(inputText),
+        text: `${note}\n\n${fallbackText}`,
         sender: 'bot',
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, botResponse]);
+
+      setMessages((prev) => [...prev, botResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleQuickResponse = (response) => {
@@ -1002,7 +1113,17 @@ const HealthChatbot = ({ userProfile, recentMetrics = [] }) => {
               <span className="text-lg sm:text-xl">🏥</span>
               <div>
                 <h3 className="font-bold text-xs sm:text-sm">ผู้ช่วยสุขภาพ AI</h3>
-                <p className="text-xs text-blue-100">พร้อมให้คำปรึกษา 24/7</p>
+                <p
+                  className={`text-xs ${
+                    assistantStatus.mode === 'online'
+                      ? 'text-blue-100'
+                      : 'text-yellow-100 font-semibold'
+                  }`}
+                >
+                  {assistantStatus.mode === 'online'
+                    ? `เชื่อมต่อ ${assistantStatus.engine || 'AI'} พร้อมให้คำปรึกษา`
+                    : 'โหมดสำรอง: แสดงคำแนะนำจากข้อมูลในระบบ'}
+                </p>
               </div>
             </div>
             <button
@@ -1012,6 +1133,14 @@ const HealthChatbot = ({ userProfile, recentMetrics = [] }) => {
               ×
             </button>
           </div>
+
+          {assistantStatus.mode === 'fallback' && (
+            <div className="bg-yellow-50 text-yellow-800 text-xs px-3 sm:px-4 py-2 border-b border-yellow-200">
+              {lastAiError === 'missing_token'
+                ? 'กรุณาเข้าสู่ระบบเพื่อให้ผู้ช่วย AI ตอบแบบเรียลไทม์'
+                : 'ระบบ AI มีปัญหาชั่วคราว จึงแสดงคำแนะนำจากข้อมูลที่มีอยู่ในระบบแทน'}
+            </div>
+          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3 bg-gradient-to-b from-blue-50/30 to-white touch-scroll">

@@ -1,5 +1,24 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+const FALLBACK_MODEL = 'gemini-1.5-flash';
+
+const normalizeModelName = (name) => {
+  if (!name || typeof name !== 'string') {
+    return FALLBACK_MODEL;
+  }
+
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return FALLBACK_MODEL;
+  }
+
+  if (/-(latest|Latest)$/.test(trimmed)) {
+    return trimmed.replace(/-(latest|Latest)$/, '');
+  }
+
+  return trimmed;
+};
+
 const logAiEvent = (level, message, details = {}) => {
   const timestamp = new Date().toISOString();
   const logPayload = {
@@ -20,10 +39,12 @@ const logAiEvent = (level, message, details = {}) => {
 let cachedClient = null;
 let cachedApiKey = null;
 
-const DEFAULT_MODEL =
+const DEFAULT_MODEL = normalizeModelName(
   process.env.GEMINI_MODEL ||
-  process.env.GENERATIVE_AI_MODEL ||
-  'gemini-1.5-flash-latest';
+    process.env.GENERATIVE_AI_MODEL ||
+    process.env.GOOGLE_GENAI_MODEL ||
+    FALLBACK_MODEL
+);
 
 const resolveApiKey = () => {
   return (
@@ -282,6 +303,90 @@ const buildPrompt = ({
 `;
 };
 
+const formatConversationHistory = (history = []) => {
+  return history
+    .filter((item) => item && typeof item.content === 'string')
+    .map((item) => {
+      const role = item.role === 'assistant' ? 'ผู้ช่วย' : 'ผู้ใช้';
+      return `${role}: ${item.content.trim()}`.trim();
+    })
+    .filter(Boolean)
+    .join('\n');
+};
+
+const buildChatPrompt = ({
+  message,
+  history = [],
+  profile = {},
+  healthHistory = [],
+  behaviorHistory = [],
+  medications = [],
+  profileMedications = [],
+  profileConditions = [],
+}) => {
+  const age = calculateAge(profile?.date_of_birth);
+  const gender = profile?.gender || 'ไม่ระบุ';
+  const height = profile?.height_cm ? `${profile.height_cm} ซม.` : 'ไม่ระบุ';
+  const weight = profile?.weight_kg ? `${profile.weight_kg} กก.` : 'ไม่ระบุ';
+  const bmi = profile?.bmi ? `${profile.bmi}` : 'ไม่ระบุ';
+
+  const conditionSummary = (profileConditions || []).length
+    ? profileConditions.join(', ')
+    : 'ไม่มีข้อมูลโรคประจำตัว';
+
+  const medicationLines = (medications && medications.length > 0)
+    ? medications.map((med) => {
+        const name = med.medication_name || med.name || med.title || 'ไม่ระบุชื่อยา';
+        const dose = med.dosage || med.dose || med.dose_mg || '';
+        const frequency = med.frequency || med.frequency_per_day || '';
+        const schedule = med.time_schedule || med.timing || '';
+        const pieces = [name];
+        if (dose) pieces.push(`ขนาด ${dose}`);
+        if (frequency) pieces.push(`ความถี่ ${frequency}`);
+        if (schedule) pieces.push(`เวลา ${schedule}`);
+        return pieces.join(' | ');
+      })
+    : (profileMedications && profileMedications.length > 0)
+      ? profileMedications
+      : ['ไม่มีข้อมูลยาที่ใช้อยู่'];
+
+  const vitalsSummary = summarizeHistory(healthHistory, 4).map((line) => `- ${line}`).join('\n');
+  const behaviorSummary = summarizeHistory(behaviorHistory, 4).map((line) => `- ${line}`).join('\n');
+  const historyText = formatConversationHistory(history);
+
+  return `คุณเป็นแพทย์เวชศาสตร์ครอบครัวที่ให้คำปรึกษาผ่านระบบแชท ตอบเป็นภาษาไทยเท่านั้น ใช้น้ำเสียงเป็นมิตร ให้คำแนะนำที่ทำได้จริง และหลีกเลี่ยงการสร้างข้อมูลที่ไม่มีในบริบท หากข้อมูลไม่เพียงพอให้แนะนำให้พบแพทย์
+
+ข้อมูลผู้ใช้:
+- เพศ: ${gender}
+- อายุ: ${age ?? 'ไม่ระบุ'} ปี
+- ส่วนสูง: ${height}
+- น้ำหนักล่าสุด: ${weight}
+- BMI: ${bmi}
+- โรคประจำตัว: ${conditionSummary}
+- ยาที่ใช้อยู่:
+${medicationLines.map((line) => `  • ${line}`).join('\n')}
+
+ข้อมูลสุขภาพล่าสุด:
+${vitalsSummary || '- ไม่มีข้อมูลสุขภาพล่าสุด'}
+
+ข้อมูลพฤติกรรมล่าสุด:
+${behaviorSummary || '- ไม่มีข้อมูลพฤติกรรม'}
+
+ประวัติการสนทนาก่อนหน้า:
+${historyText || 'ยังไม่มีประวัติการสนทนา'}
+
+คำถามล่าสุดจากผู้ใช้:
+ผู้ใช้: ${message}
+
+ข้อกำหนด:
+- อธิบายอย่างกระชับใน 2-4 ย่อหน้า หรือใช้ bullet ให้เข้าใจง่าย
+- เน้นคำแนะนำที่ปฏิบัติได้จริงในชีวิตประจำวัน
+- เตือนให้พบแพทย์หรือสายด่วน 1669 เมื่อมีอาการรุนแรงหรือไม่แน่ใจ
+- อย่าให้คำแนะนำการปรับยาเองหรือขัดแย้งกับแพทย์ประจำ
+
+ตอบกลับ:`;
+};
+
 export const generateHealthAdvice = async (payload) => {
   const client = getClient();
   if (!client) {
@@ -292,7 +397,7 @@ export const generateHealthAdvice = async (payload) => {
   }
 
   try {
-    const modelName = DEFAULT_MODEL;
+    const modelName = normalizeModelName(payload?.model) || DEFAULT_MODEL;
     const model = client.getGenerativeModel({ model: modelName });
     const prompt = buildPrompt(payload);
 
@@ -313,7 +418,8 @@ export const generateHealthAdvice = async (payload) => {
         model: modelName,
       };
     }
-  const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
+
+    const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
 
     logAiEvent('info', 'Gemini advice generated', {
       model: modelName,
@@ -328,9 +434,20 @@ export const generateHealthAdvice = async (payload) => {
       model: modelName,
     };
   } catch (error) {
+    const status = error?.response?.status || null;
+    const rawMessage = error?.response?.data?.error?.message || error?.message || 'unknown_error';
+    let reasonCode = 'unknown_error';
+
+    if (status === 404) {
+      reasonCode = 'model_not_found';
+    } else if (status === 403) {
+      reasonCode = /unregistered callers/i.test(rawMessage) ? 'missing_api_key' : 'permission_denied';
+    }
+
     const enriched = {
       model: DEFAULT_MODEL,
-      reason: error?.message || 'unknown_error',
+      reason: rawMessage,
+      reasonCode,
       status: error?.response?.status || null,
       statusText: error?.response?.statusText || null,
       errorType: error?.name || null,
@@ -345,7 +462,86 @@ export const generateHealthAdvice = async (payload) => {
     logAiEvent('error', 'Gemini request failed', enriched);
     return {
       success: false,
-      reason: error.message,
+      reason: reasonCode,
+      message: rawMessage,
+    };
+  }
+};
+
+export const generateChatResponse = async (payload = {}) => {
+  const client = getClient();
+  if (!client) {
+    return {
+      success: false,
+      reason: 'missing_api_key',
+    };
+  }
+
+  const modelName = normalizeModelName(payload?.model) || DEFAULT_MODEL;
+
+  try {
+    const model = client.getGenerativeModel({ model: modelName });
+    const prompt = buildChatPrompt(payload);
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response?.text?.() ?? '';
+    const trimmed = text.trim();
+
+    if (!trimmed) {
+      logAiEvent('warn', 'Gemini chat returned empty response', {
+        model: modelName,
+      });
+      return {
+        success: false,
+        reason: 'empty_response',
+        rawText: text,
+        model: modelName,
+      };
+    }
+
+    logAiEvent('info', 'Gemini chat reply generated', {
+      model: modelName,
+      charLength: trimmed.length,
+    });
+
+    return {
+      success: true,
+      message: trimmed,
+      model: modelName,
+    };
+  } catch (error) {
+    const status = error?.response?.status || null;
+    const rawMessage = error?.response?.data?.error?.message || error?.message || 'unknown_error';
+    let reasonCode = 'unknown_error';
+
+    if (status === 404) {
+      reasonCode = 'model_not_found';
+    } else if (status === 403) {
+      reasonCode = /unregistered callers/i.test(rawMessage) ? 'missing_api_key' : 'permission_denied';
+    }
+
+    const enriched = {
+      model: modelName,
+      reason: rawMessage,
+      reasonCode,
+      status,
+      statusText: error?.response?.statusText || null,
+      errorType: error?.name || null,
+    };
+
+    if (error?.response?.data) {
+      enriched.responseData = typeof error.response.data === 'string'
+        ? error.response.data.slice(0, 500)
+        : error.response.data;
+    }
+
+    logAiEvent('error', 'Gemini chat request failed', enriched);
+
+    return {
+      success: false,
+      reason: reasonCode,
+      message: rawMessage,
     };
   }
 };
