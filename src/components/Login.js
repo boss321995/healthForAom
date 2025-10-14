@@ -26,25 +26,6 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
     setError('');
   };
 
-  const handleDemoLogin = async () => {
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      // ใช้ข้อมูล demo
-      const result = await login('demo', '123456');
-      
-      if (!result.success) {
-        setError('ไม่สามารถเข้าสู่โหมด Demo ได้ กรุณาลองใหม่อีกครั้ง');
-      }
-    } catch (error) {
-      console.error('Demo login error:', error);
-      setError('เกิดข้อผิดพลาดในโหมด Demo');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -126,7 +107,6 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
                         <ul className="list-disc list-inside space-y-1">
                           <li>ตรวจสอบการพิมพ์ Caps Lock</li>
                           <li>ตรวจสอบว่าใช้ชื่อผู้ใช้หรืออีเมลที่ถูกต้อง</li>
-                          <li>ลองใช้ Demo: username="demo", password="123456"</li>
                         </ul>
                       </div>
                     )}
@@ -137,7 +117,6 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
                         <ul className="list-disc list-inside space-y-1">
                           <li>เซิร์ฟเวอร์อาจกำลังบำรุงรักษา</li>
                           <li>รอ 30 วินาที แล้วลองใหม่</li>
-                          <li>หากยังมีปัญหา ให้ใช้โหมด Demo</li>
                         </ul>
                       </div>
                     )}
@@ -234,22 +213,6 @@ const Login = ({ onSwitchToRegister, onBackToLanding }) => {
           </form>
           
           <div className="mt-6 text-center space-y-3">
-            {/* ปุ่ม Demo Login สำหรับกรณีมีปัญหา */}
-            {error && (
-              <div className="mb-4">
-                <button
-                  onClick={handleDemoLogin}
-                  disabled={isLoading}
-                  className="w-full py-2 px-4 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? 'กำลังเข้าสู่โหมด Demo...' : '🎯 ลองโหมด Demo (ไม่ต้องสมัครสมาชิก)'}
-                </button>
-                <p className="text-xs text-gray-600 mt-2">
-                  โหมด Demo ใช้สำหรับทดลองระบบเมื่อมีปัญหาการเชื่อมต่อ
-                </p>
-              </div>
-            )}
-            
             <p className="text-blue-700 font-semibold">
               ยังไม่มีบัญชี?{' '}
               <button

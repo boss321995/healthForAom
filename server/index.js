@@ -237,9 +237,6 @@ async function initDatabase() {
   // Ensure user profile schema matches expected frontend fields
   await migrateUserProfilesSchema();
 
-  // Seed demo user for easier login (optional)
-  await ensureDemoUser();
-
     connectionAttempts = 0; // Reset on success
 
   } catch (error) {
@@ -402,73 +399,6 @@ async function createBasicTables() {
   }
 }
 
-async function ensureDemoUser() {
-  if (!db) {
-    console.warn('⚠️ Cannot seed demo user - database connection unavailable');
-    return;
-  }
-
-  if (process.env.SKIP_DEMO_USER === 'true') {
-    console.log('⏭️ Skipping demo user creation (SKIP_DEMO_USER=true)');
-    return;
-  }
-
-  const demoUsername = process.env.DEMO_USERNAME || 'demo';
-  const demoEmail = process.env.DEMO_EMAIL || 'demo@example.com';
-  const demoPassword = process.env.DEMO_PASSWORD || '123456';
-
-  try {
-    const existing = await db.query(
-      'SELECT id FROM users WHERE username = $1 OR email = $2',
-      [demoUsername, demoEmail]
-    );
-
-    if (existing.rows.length > 0) {
-      console.log(`ℹ️ Demo user "${demoUsername}" already exists`);
-      return;
-    }
-
-    const passwordHash = await bcrypt.hash(demoPassword, 10);
-    const insertUser = await db.query(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-      [demoUsername, demoEmail, passwordHash]
-    );
-
-    const demoUserId = insertUser.rows[0]?.id;
-
-    if (demoUserId) {
-      const existingProfile = await db.query(
-        'SELECT profile_id FROM user_profiles WHERE user_id = $1',
-        [demoUserId]
-      );
-
-      if (existingProfile.rows.length === 0) {
-        await db.query(
-          `INSERT INTO user_profiles (
-            user_id,
-            full_name,
-            gender,
-            phone,
-            medical_conditions,
-            medications
-          ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            demoUserId,
-            'Demo User',
-            'other',
-            '000-000-0000',
-            'ใช้สำหรับทดสอบระบบ',
-            'N/A'
-          ]
-        );
-      }
-    }
-
-    console.log(`✅ Demo user "${demoUsername}" created with default password`);
-  } catch (error) {
-    console.error('⚠️ Failed to ensure demo user exists:', error.message);
-  }
-}
 
 async function migrateUserProfilesSchema() {
   if (!db) {
