@@ -1,5 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+const logAiEvent = (level, message, details = {}) => {
+  const timestamp = new Date().toISOString();
+  const logPayload = {
+    timestamp,
+    message,
+    ...details,
+  };
+
+  if (level === 'error') {
+    console.error('🤖 [AI Advisor]', logPayload);
+  } else if (level === 'warn') {
+    console.warn('🤖 [AI Advisor]', logPayload);
+  } else {
+    console.info('🤖 [AI Advisor]', logPayload);
+  }
+};
+
 let cachedClient = null;
 let cachedApiKey = null;
 
@@ -282,6 +299,10 @@ export const generateHealthAdvice = async (payload) => {
 
     const parsed = extractJson(text);
     if (!parsed) {
+      logAiEvent('warn', 'Gemini returned an unparseable response', {
+        model: modelName,
+        rawPreview: text?.slice?.(0, 500) || null,
+      });
       return {
         success: false,
         reason: 'invalid_response_format',
@@ -289,8 +310,14 @@ export const generateHealthAdvice = async (payload) => {
         model: modelName,
       };
     }
+  const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
 
-    const advice = normalizeAdvice({ ...parsed, model: modelName, source: 'gemini' });
+    logAiEvent('info', 'Gemini advice generated', {
+      model: modelName,
+      overviewLength: advice?.overall_assessment?.length || 0,
+      recommendationSections: advice?.recommendations ? Object.keys(advice.recommendations) : [],
+    });
+
     return {
       success: true,
       data: advice,
@@ -298,7 +325,21 @@ export const generateHealthAdvice = async (payload) => {
       model: modelName,
     };
   } catch (error) {
-    console.error('❌ AI advisor error:', error);
+    const enriched = {
+      model: DEFAULT_MODEL,
+      reason: error?.message || 'unknown_error',
+      status: error?.response?.status || null,
+      statusText: error?.response?.statusText || null,
+      errorType: error?.name || null,
+    };
+
+    if (error?.response?.data) {
+      enriched.responseData = typeof error.response.data === 'string'
+        ? error.response.data.slice(0, 500)
+        : error.response.data;
+    }
+
+    logAiEvent('error', 'Gemini request failed', enriched);
     return {
       success: false,
       reason: error.message,

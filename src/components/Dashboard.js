@@ -364,8 +364,19 @@ const Dashboard = () => {
     if (aiRecommendations && aiRecommendations.length > 0) {
       return aiRecommendations;
     }
+
+    if (aiStatus.mode === 'fallback') {
+      const fallbackNotice = {
+        icon: '🤖',
+        title: 'AI ไม่พร้อมใช้งานชั่วคราว',
+        content: 'ข้อมูล AI ยังไม่พร้อม จึงแสดงคำแนะนำทั่วไปจากประวัติสุขภาพล่าสุดของคุณ',
+        color: 'yellow'
+      };
+      return [fallbackNotice, ...conditionBasedTips];
+    }
+
     return conditionBasedTips;
-  }, [aiRecommendations, conditionBasedTips]);
+  }, [aiRecommendations, conditionBasedTips, aiStatus.mode]);
 
   const getLatestBehaviorValue = (fields, { numeric = true, allowZero = false } = {}) => {
     if (!Array.isArray(fields)) {
@@ -498,6 +509,9 @@ const Dashboard = () => {
       hydration: { title: 'การดื่มน้ำ', icon: '💧', color: 'blue' },
       medication: { title: 'การใช้ยา', icon: '💊', color: 'rose' },
       medications: { title: 'การใช้ยา', icon: '💊', color: 'rose' },
+      overall: { title: 'ภาพรวมสุขภาพ', icon: '🩺', color: 'purple' },
+      overall_assessment: { title: 'ภาพรวมสุขภาพ', icon: '🩺', color: 'purple' },
+      overallAssessment: { title: 'ภาพรวมสุขภาพ', icon: '🩺', color: 'purple' },
       treatment: { title: 'การรักษา', icon: '🏥', color: 'rose' },
       monitoring: { title: 'การติดตามอาการ', icon: '📈', color: 'purple' },
       warning: { title: 'สัญญาณเตือน', icon: '⚠️', color: 'red' },
