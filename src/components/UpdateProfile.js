@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import {
+  safariLocalStorage,
+  getSafariAxiosConfig,
+  handleSafariCorsError,
+  getSafariErrorMessage
+} from '../utils/safariSupport';
 
 const UpdateProfile = () => {
   const { user } = useAuth();
@@ -21,72 +27,87 @@ const UpdateProfile = () => {
     medications: ''
   });
 
+  const formatDateValue = (value) => {
+    if (!value) return '';
+    if (value instanceof Date) {
+      return value.toISOString().split('T')[0];
+    }
+    const stringValue = String(value);
+    if (stringValue.includes('T')) {
+      return stringValue.split('T')[0];
+    }
+    if (stringValue.includes(' ')) {
+      return stringValue.split(' ')[0];
+    }
+    return stringValue;
+  };
+
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    if (!user) return;
+
+    setProfileForm(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      const maybeUpdate = (field, value, transform = (val) => val ?? '') => {
+        if (next[field]) return;
+        const transformed = transform(value);
+        if (transformed) {
+          next[field] = transformed;
+          changed = true;
+        }
+      };
+
+      maybeUpdate('full_name', user.full_name || user.name || user.display_name);
+      maybeUpdate('date_of_birth', user.date_of_birth, formatDateValue);
+      maybeUpdate('gender', user.gender);
+      maybeUpdate('blood_group', user.blood_group);
+      maybeUpdate('height_cm', user.height_cm);
+      maybeUpdate('phone', user.phone);
+      maybeUpdate('emergency_contact', user.emergency_contact);
+      maybeUpdate('emergency_phone', user.emergency_phone);
+      maybeUpdate('medical_conditions', user.medical_conditions);
+      maybeUpdate('medications', user.medications);
+
+      return changed ? next : prev;
+    });
+  }, [user]);
 
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('healthToken');
-      
-      console.log('🔍 Fetching profile...');
-      console.log('Token exists:', !!token);
-      console.log('Token type:', token ? (token.startsWith('mock-') ? 'MOCK' : 'REAL') : 'NONE');
-      
+      const token = safariLocalStorage.getItem('healthToken');
+
       if (!token) {
-        console.log('❌ No token found');
+        setSubmitMessage({ type: 'error', text: 'กรุณาเข้าสู่ระบบใหม่' });
         setLoading(false);
         return;
       }
 
-      // Check if it's a mock token - don't send to backend
       if (token.startsWith('mock-jwt-token-')) {
-        console.log('🎭 Mock token detected - using mock profile data');
-        const mockUser = JSON.parse(localStorage.getItem('healthUser') || '{}');
-        console.log('Mock user data:', mockUser);
-        
-        const mockProfile = mockUser.profile || {};
-        setProfileForm({
-          full_name: mockProfile.full_name || mockUser.username || '',
-          date_of_birth: mockProfile.date_of_birth || '',
-          gender: mockProfile.gender || '',
-          height_cm: mockProfile.height_cm || '',
-          blood_group: mockProfile.blood_group || '',
-          phone: mockProfile.phone || '',
-          emergency_contact: mockProfile.emergency_contact || '',
-          emergency_phone: mockProfile.emergency_phone || '',
-          medical_conditions: mockProfile.medical_conditions || '',
-          medications: mockProfile.medications || ''
-        });
+        setSubmitMessage({ type: 'error', text: 'โทเค็นไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' });
         setLoading(false);
         return;
       }
 
-      const headers = { 
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
+      const baseConfig = getSafariAxiosConfig();
+      const requestConfig = {
+        ...baseConfig,
+        headers: {
+          ...baseConfig.headers,
+          Authorization: `Bearer ${token}`
+        }
       };
-      
-      console.log('🔍 Fetching profile with token:', token ? `${token.substring(0, 20)}...` : 'No token');
-      
-      // Use relative API URL to fix CORS issue
-      const apiUrl = '/api/users/profile';
-        
-      const response = await axios.get(apiUrl, { 
-        headers,
-        timeout: 10000 // 10 second timeout
-      });
-      
-      console.log('📊 Profile data received:', response.data);
-      
+
+      const response = await axios.get('/api/users/profile', requestConfig);
+
       // Backend returns { user: {}, profile: {} }
       const profileData = response.data.profile;
       
       if (profileData) {
         setProfileForm({
           full_name: profileData.full_name || '',
-          date_of_birth: profileData.date_of_birth ? profileData.date_of_birth.split('T')[0] : '',
+          date_of_birth: formatDateValue(profileData.date_of_birth),
           gender: profileData.gender || '',
           height_cm: profileData.height_cm || '',
           blood_group: profileData.blood_group || '',
@@ -96,17 +117,21 @@ const UpdateProfile = () => {
           medical_conditions: profileData.medical_conditions || '',
           medications: profileData.medications || ''
         });
-      } else {
-        // No profile data exists yet - keep empty form
-        console.log('No profile data found - showing empty form');
       }
     } catch (error) {
-      console.error('❌ Error fetching profile:', error);
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
+      const safariCors = handleSafariCorsError(error);
+      if (safariCors) {
+        setSubmitMessage({ type: 'error', text: safariCors.message });
+        setLoading(false);
+        return;
+      }
+
+      const safariMessage = getSafariErrorMessage(error);
+      if (safariMessage) {
+        setSubmitMessage({ type: 'error', text: safariMessage });
+        setLoading(false);
+        return;
+      }
       
       if (error.response?.status === 401) {
         setSubmitMessage({ type: 'error', text: 'กรุณาเข้าสู่ระบบใหม่' });
@@ -119,6 +144,10 @@ const UpdateProfile = () => {
       setLoading(false);
     }
   };
+
+    useEffect(() => {
+      fetchProfile();
+    }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -171,60 +200,55 @@ const UpdateProfile = () => {
     }
 
     try {
-      const token = localStorage.getItem('healthToken');
+      const token = safariLocalStorage.getItem('healthToken');
       if (!token) {
         setSubmitMessage({ type: 'error', text: 'กรุณาเข้าสู่ระบบใหม่' });
         setIsSubmitting(false);
         return;
       }
 
-      // Check if it's a mock token - don't send to backend
       if (token.startsWith('mock-jwt-token-')) {
-        console.log('🎭 Mock token detected - saving to localStorage instead');
-        // Update mock user data
-        const mockUser = JSON.parse(localStorage.getItem('healthUser') || '{}');
-        mockUser.profile = profileForm;
-        localStorage.setItem('healthUser', JSON.stringify(mockUser));
-        setSubmitMessage({ type: 'success', text: 'อัพเดตข้อมูลส่วนตัวสำเร็จ (Demo mode)' });
+        setSubmitMessage({ type: 'error', text: 'โทเค็นไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' });
         setIsSubmitting(false);
         return;
       }
 
-      const headers = { 
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
+      const baseConfig = getSafariAxiosConfig();
+      const requestConfig = {
+        ...baseConfig,
+        headers: {
+          ...baseConfig.headers,
+          Authorization: `Bearer ${token}`
+        }
       };
-      
-      console.log('🚀 Sending profile data:', profileForm);
-      console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'No token');
-      
-      // Use same API URL as fetch for consistency
-      const apiUrl = '/api/users/profile';
-        
-      const response = await axios.put(apiUrl, profileForm, { 
-        headers,
-        timeout: 10000 // 10 second timeout
-      });
-      
-      console.log('✅ Profile update response:', response.data);
+
+      await axios.put('/api/users/profile', profileForm, requestConfig);
       
       setSubmitMessage({ type: 'success', text: 'อัปเดตโปรไฟล์สำเร็จ!' });
-      
+
       // Auto hide success message after 3 seconds
       setTimeout(() => {
         setSubmitMessage({ type: '', text: '' });
       }, 3000);
       
-    } catch (error) {
-      console.error('❌ Error updating profile:', error);
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        headers: error.response?.headers,
-        config: error.config
-      });
+      // Refresh profile data after successful update
+      await fetchProfile();
       
+    } catch (error) {
+      const safariCors = handleSafariCorsError(error);
+      if (safariCors) {
+        setSubmitMessage({ type: 'error', text: safariCors.message });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const safariMessage = getSafariErrorMessage(error);
+      if (safariMessage) {
+        setSubmitMessage({ type: 'error', text: safariMessage });
+        setIsSubmitting(false);
+        return;
+      }
+
       let errorMessage = 'เกิดข้อผิดพลาดในการอัปเดตโปรไฟล์';
       
       if (error.code === 'ECONNABORTED') {
