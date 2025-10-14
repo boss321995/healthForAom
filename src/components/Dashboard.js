@@ -3117,7 +3117,7 @@ const Dashboard = () => {
                     {aiStatus.loading && (
                       <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-3 text-indigo-700 text-xs flex items-center space-x-2">
                         <span className="animate-spin">⏳</span>
-                        <span>กำลังประมวลผลข้อมูลสุขภาพล่าสุด...</span>
+                        <span>กำลังประมวลผลข้อมูลสุขภาพล่าสุด...ใช้เวลาประมาณ 8-9 วินาที</span>
                       </div>
                     )}
 
