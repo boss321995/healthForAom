@@ -22,7 +22,15 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(safariLocalStorage.getItem('healthToken'));
+  const [token, setToken] = useState(() => {
+    const storedToken = safariLocalStorage.getItem('healthToken');
+    if (storedToken && storedToken.startsWith('mock-jwt-token-')) {
+      safariLocalStorage.removeItem('healthToken');
+      safariLocalStorage.removeItem('healthUser');
+      return null;
+    }
+    return storedToken;
+  });
 
   // Initialize Safari support
   useEffect(() => {
@@ -43,14 +51,8 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = async () => {
       if (token) {
         try {
-          // Check if it's a mock token
           if (token.startsWith('mock-jwt-token-')) {
-            const mockUser = JSON.parse(safariLocalStorage.getItem('healthUser'));
-            if (mockUser) {
-              setUser(mockUser);
-            } else {
-              logout();
-            }
+            logout();
           } else {
             // Real backend authentication check with Safari config
             const config = getSafariAxiosConfig();
@@ -124,45 +126,7 @@ export const AuthProvider = ({ children }) => {
       if (error.response?.status === 500) {
         return { success: false, message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง' };
       }
-      
-      // Fallback to mock login for development/demo
-      console.log('Using mock authentication for demo purposes');
-      
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        if (!username || !password) {
-          return { success: false, message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' };
-        }
-        
-        if (password.length < 6) {
-          return { success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' };
-        }
-
-        const mockToken = 'mock-jwt-token-' + Date.now();
-        const mockUser = {
-          id: Math.floor(Math.random() * 1000),
-          username: username,
-          email: username + '@example.com',
-          name: username,
-          avatar: null,
-          createdAt: new Date().toISOString()
-        };
-        
-        setToken(mockToken);
-        setUser(mockUser);
-        safariLocalStorage.setItem('healthToken', mockToken);
-        safariLocalStorage.setItem('healthUser', JSON.stringify(mockUser));
-        
-        const demoMessage = isSafari() ? 
-          'เข้าสู่ระบบสำเร็จ (Safari Demo Mode)' : 
-          'เข้าสู่ระบบสำเร็จ (Demo Mode)';
-        
-        return { success: true, message: demoMessage };
-      } catch (mockError) {
-        console.error('Mock login also failed:', mockError);
-        return { success: false, message: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง' };
-      }
+      return { success: false, message: 'ไม่สามารถเข้าสู่ระบบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง' };
     }
   };
 
@@ -198,45 +162,43 @@ export const AuthProvider = ({ children }) => {
         response: error.response?.data,
         status: error.response?.status
       });
-      
-      // Fallback to mock registration
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (!username || !email || !password) {
-        throw new Error('กรุณากรอกข้อมูลให้ครบถ้วน');
+
+      if (error.response) {
+        const status = error.response.status;
+        const apiMessage = error.response.data?.error || error.response.data?.message;
+
+        if (status === 400) {
+          return { success: false, message: apiMessage || 'ข้อมูลไม่ถูกต้องหรือมีผู้ใช้งานแล้ว' };
+        }
+
+        if (status === 401) {
+          return { success: false, message: apiMessage || 'ไม่ได้รับอนุญาต กรุณาลองเข้าสู่ระบบอีกครั้ง' };
+        }
+
+        if (status === 403) {
+          return { success: false, message: apiMessage || 'สิทธิ์การเข้าถึงไม่ถูกต้อง กรุณาลองใหม่' };
+        }
+
+        if (status === 409) {
+          return { success: false, message: apiMessage || 'ข้อมูลผู้ใช้งานซ้ำ กรุณาเปลี่ยนชื่อผู้ใช้หรืออีเมล' };
+        }
+
+        return { success: false, message: apiMessage || 'ไม่สามารถสมัครสมาชิกได้ในขณะนี้' };
       }
-      
+      if (!username || !email || !password) {
+        return { success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' };
+      }
+
       if (password.length < 6) {
-        throw new Error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+        return { success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' };
       }
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
+        return { success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง' };
       }
 
-      const mockToken = 'mock-jwt-token-' + Date.now();
-      const mockUser = {
-        id: Math.floor(Math.random() * 1000),
-        username: username,
-        email: email,
-        name: profileData?.full_name || username,
-        avatar: null,
-        createdAt: new Date().toISOString()
-      };
-      
-      setToken(mockToken);
-      setUser(mockUser);
-      localStorage.setItem('healthToken', mockToken);
-      localStorage.setItem('healthUser', JSON.stringify(mockUser));
-      
-      // Save profile data to localStorage for mock
-      if (profileData) {
-        localStorage.setItem('healthProfile', JSON.stringify(profileData));
-        console.log('📝 Mock profile data saved to localStorage');
-      }
-      
-      return { success: true, message: 'สมัครสมาชิกสำเร็จ (Mock)' };
+      return { success: false, message: 'เกิดข้อผิดพลาดในการสมัครสมาชิก กรุณาลองใหม่อีกครั้ง' };
     }
   };
 
