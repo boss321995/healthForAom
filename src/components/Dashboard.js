@@ -237,27 +237,72 @@ const Dashboard = () => {
     }
 
     const formatted = [];
+    const seen = new Set();
 
     const pushTip = (tip) => {
-      if (!tip || !tip.title || !tip.content) {
+      if (!tip || !tip.title || (!tip.content && (!tip.items || tip.items.length === 0))) {
         return;
       }
-      if (!formatted.some(existing => existing.title === tip.title && existing.content === tip.content)) {
-        formatted.push(tip);
+      const fingerprint = JSON.stringify({
+        title: tip.title,
+        content: tip.content || null,
+        items: tip.items || null
+      });
+      if (seen.has(fingerprint)) {
+        return;
       }
+      seen.add(fingerprint);
+      formatted.push(tip);
     };
 
-    const normalizeContent = (value) => {
+    const normalizeText = (value) => {
       if (value == null) {
         return '';
       }
       if (typeof value === 'string') {
         return value.trim();
       }
+      if (Array.isArray(value)) {
+        return value
+          .map((item) => normalizeText(item))
+          .filter(Boolean)
+          .join('\n');
+      }
       if (typeof value === 'object') {
-        return value.description || value.detail || value.content || JSON.stringify(value);
+        const preferred =
+          value.description ||
+          value.detail ||
+          value.content ||
+          value.message ||
+          value.text ||
+          value.summary;
+        if (preferred) {
+          return normalizeText(preferred);
+        }
+        const aggregated = Object.values(value)
+          .map((item) => normalizeText(item))
+          .filter(Boolean)
+          .join(' ');
+        return aggregated || '';
       }
       return String(value);
+    };
+
+    const ensureArray = (input) => {
+      if (!input) {
+        return [];
+      }
+      return Array.isArray(input) ? input : [input];
+    };
+
+    const appendListTip = ({ title, icon, color, values }) => {
+      const items = ensureArray(values)
+        .map((item) => normalizeText(item))
+        .filter(Boolean);
+      if (items.length === 0) {
+        return;
+      }
+      pushTip({ title, icon, color, items });
     };
 
     const payload = (insightsData && typeof insightsData === 'object' && !Array.isArray(insightsData))
@@ -266,25 +311,57 @@ const Dashboard = () => {
           : insightsData)
       : {};
 
-    const recommendations = Array.isArray(payload.recommendations)
-      ? payload.recommendations
-      : payload.recommendations ? [payload.recommendations] : [];
+    const overallAssessment = payload.overall_assessment || payload.overallAssessment || payload.summary;
+    if (overallAssessment) {
+      pushTip({
+        icon: '🩺',
+        title: 'สรุปโดยรวม',
+        content: normalizeText(overallAssessment),
+        color: 'purple'
+      });
+    }
 
-    recommendations.forEach((item, index) => {
-      const content = normalizeContent(item);
-      if (content) {
-        pushTip({
-          icon: '🤖',
-          title: `AI แนะนำ ${index + 1}`,
-          content,
-          color: 'indigo'
+    const recommendationMeta = {
+      diet: { title: 'โภชนาการ', icon: '🥗', color: 'green' },
+      nutrition: { title: 'โภชนาการ', icon: '🥗', color: 'green' },
+      exercise: { title: 'การออกกำลังกาย', icon: '🏃‍♀️', color: 'blue' },
+      activity: { title: 'กิจกรรมทางกาย', icon: '🏃‍♀️', color: 'blue' },
+      lifestyle: { title: 'การใช้ชีวิตประจำวัน', icon: '🌿', color: 'indigo' },
+      sleep: { title: 'การนอนหลับ', icon: '😴', color: 'purple' },
+      mental: { title: 'สุขภาพจิต', icon: '🧠', color: 'orange' },
+      stress: { title: 'การจัดการความเครียด', icon: '🧘‍♀️', color: 'orange' },
+      hydration: { title: 'การดื่มน้ำ', icon: '💧', color: 'blue' }
+    };
+
+    const rawRecommendations = payload.recommendations;
+    if (rawRecommendations && typeof rawRecommendations === 'object' && !Array.isArray(rawRecommendations)) {
+      Object.entries(rawRecommendations).forEach(([key, value]) => {
+        const meta = recommendationMeta[key] || { title: key, icon: '🤖', color: 'indigo' };
+        appendListTip({
+          title: `คำแนะนำด้าน${meta.title}`,
+          icon: meta.icon,
+          color: meta.color,
+          values: value
         });
-      }
-    });
+      });
+    } else {
+      const recommendations = ensureArray(rawRecommendations);
+      recommendations.forEach((item, index) => {
+        const content = normalizeText(item);
+        if (content) {
+          pushTip({
+            icon: '🤖',
+            title: `AI แนะนำ ${index + 1}`,
+            content,
+            color: 'indigo'
+          });
+        }
+      });
+    }
 
-    const improvements = Array.isArray(payload.improvements) ? payload.improvements : [];
+    const improvements = ensureArray(payload.improvements);
     improvements.forEach((item, index) => {
-      const content = normalizeContent(item);
+      const content = normalizeText(item);
       if (content) {
         pushTip({
           icon: '📈',
@@ -295,11 +372,11 @@ const Dashboard = () => {
       }
     });
 
-    const riskFactors = Array.isArray(payload.riskFactors) ? payload.riskFactors : [];
+    const riskFactors = ensureArray(payload.riskFactors || payload.risks);
     riskFactors.forEach((factor, index) => {
       const label = factor?.label || factor?.title || factor?.name || `ปัจจัยเสี่ยง ${index + 1}`;
-      const description = normalizeContent(factor);
-      const detail = factor?.detail || factor?.description || factor?.recommendation || '';
+      const description = normalizeText(factor);
+      const detail = normalizeText(factor?.detail || factor?.description || factor?.recommendation);
       const content = [description, detail].filter(Boolean).join(' - ');
       if (content) {
         pushTip({
@@ -311,9 +388,9 @@ const Dashboard = () => {
       }
     });
 
-  const nextActions = Array.isArray(payload.nextActions) ? payload.nextActions : [];
+    const nextActions = ensureArray(payload.nextActions);
     nextActions.forEach((action) => {
-      const description = action?.description || normalizeContent(action);
+      const description = normalizeText(action?.description || action);
       if (!description) return;
       const priority = (action?.priority || '').toLowerCase();
       let color = 'blue';
@@ -331,6 +408,18 @@ const Dashboard = () => {
         color
       });
     });
+
+    if (formatted.length === 0) {
+      const fallback = normalizeText(insightsData);
+      if (fallback) {
+        pushTip({
+          icon: '🤖',
+          title: 'คำแนะนำจาก AI',
+          content: fallback,
+          color: 'indigo'
+        });
+      }
+    }
 
     return formatted;
   };
@@ -1490,6 +1579,58 @@ const Dashboard = () => {
     }
   };
 
+  const resolveRecordDate = (record) => {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+    const candidates = [
+      record.measurement_date,
+      record.measurementDate,
+      record.record_date,
+      record.recordDate,
+      record.behavior_date,
+      record.behaviorDate,
+      record.date,
+      record.created_at,
+      record.updated_at,
+      record.createdAt,
+      record.updatedAt,
+      record.timestamp
+    ];
+    return candidates.find((value) => !!value) || null;
+  };
+
+  const getRecordTimestampInfo = (record, options = {}) => {
+    const raw = resolveRecordDate(record);
+    if (!raw) {
+      return { label: 'ยังไม่มีข้อมูล', relative: null, date: null };
+    }
+
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) {
+      return { label: 'รูปแบบวันที่ไม่ถูกต้อง', relative: null, date: null };
+    }
+
+    const dateLabel = date.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: options.short ? 'short' : 'long',
+      day: 'numeric'
+    });
+
+    const includeTime = options.includeTime !== false;
+    const timeLabel = includeTime
+      ? date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+      : null;
+
+    const label = timeLabel ? `${dateLabel} • ${timeLabel}` : dateLabel;
+
+    return {
+      label,
+      relative: formatRelativeTime(date.toISOString()),
+      date
+    };
+  };
+
   // Helper function สำหรับแปลคำศัพท์เป็นภาษาไทย
   const translateToThai = (value, type) => {
     const translations = {
@@ -2623,7 +2764,18 @@ const Dashboard = () => {
                             <span className="text-lg flex-shrink-0">{tip.icon || '🤖'}</span>
                             <div className="flex-1">
                               <h5 className="font-semibold text-xs text-indigo-900 uppercase tracking-wide mb-1">{tip.title}</h5>
-                              <p className="text-xs leading-relaxed text-indigo-800">{tip.content}</p>
+                              {tip.content && tip.content.split(/\n+/).map((line, lineIndex) => (
+                                <p key={`ai-tip-${index}-line-${lineIndex}`} className="text-xs leading-relaxed">
+                                  {line}
+                                </p>
+                              ))}
+                              {Array.isArray(tip.items) && tip.items.length > 0 && (
+                                <ul className="mt-2 text-xs leading-relaxed list-disc list-inside space-y-1">
+                                  {tip.items.map((item, itemIndex) => (
+                                    <li key={`ai-tip-${index}-item-${itemIndex}`}>{item}</li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2658,8 +2810,10 @@ const Dashboard = () => {
               </div>
               <div className="space-y-3">
                 {recentMetrics.length > 0 ? (
-                  recentMetrics.slice(0, 5).map((record, index) => (
-                    <div key={index} className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200 hover:border-blue-300 transition-colors">
+                  recentMetrics.slice(0, 5).map((record, index) => {
+                    const timestamp = getRecordTimestampInfo(record, { short: true });
+                    return (
+                      <div key={index} className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200 hover:border-blue-300 transition-colors">
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="text-blue-900 text-sm font-semibold">
@@ -2733,12 +2887,23 @@ const Dashboard = () => {
                             )}
                           </p>
                         </div>
-                        <span className="text-blue-600 text-sm font-medium bg-blue-100 px-2 py-1 rounded">
-                          {formatSafeDate(record.date || record.created_at, { short: true })}
-                        </span>
+                        <div className="text-right">
+                          <span
+                            className="inline-block text-blue-600 text-sm font-medium bg-blue-100 px-2 py-1 rounded"
+                            title={timestamp.relative ? `บันทึกเมื่อ ${timestamp.relative}` : undefined}
+                          >
+                            {timestamp.label}
+                          </span>
+                          {timestamp.relative && (
+                            <div className="text-[10px] text-blue-500 mt-1">
+                              {timestamp.relative}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-gray-200">
                     <div className="text-4xl mb-2">📊</div>
@@ -2770,8 +2935,13 @@ const Dashboard = () => {
               </div>
               <div className="space-y-3">
                 {recentMetrics.filter(record => record.exercise_duration_minutes && record.exercise_duration_minutes > 0).length > 0 ? (
-                  recentMetrics.filter(record => record.exercise_duration_minutes && record.exercise_duration_minutes > 0).slice(0, 3).map((record, index) => (
-                    <div key={index} className="bg-green-50 rounded-lg p-4 border-2 border-green-200 hover:border-green-300 transition-colors">
+                  recentMetrics
+                    .filter(record => record.exercise_duration_minutes && record.exercise_duration_minutes > 0)
+                    .slice(0, 3)
+                    .map((record, index) => {
+                      const timestamp = getRecordTimestampInfo(record, { short: true });
+                      return (
+                        <div key={index} className="bg-green-50 rounded-lg p-4 border-2 border-green-200 hover:border-green-300 transition-colors">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <p className="text-green-900 text-sm font-semibold flex items-center">
@@ -2799,12 +2969,23 @@ const Dashboard = () => {
                             </p>
                           )}
                         </div>
-                        <span className="text-green-600 text-sm font-medium bg-green-100 px-2 py-1 rounded ml-2">
-                          {formatSafeDate(record.record_date || record.date || record.created_at, { short: true })}
-                        </span>
+                        <div className="text-right ml-2">
+                          <span
+                            className="inline-block text-green-600 text-sm font-medium bg-green-100 px-2 py-1 rounded"
+                            title={timestamp.relative ? `บันทึกเมื่อ ${timestamp.relative}` : undefined}
+                          >
+                            {timestamp.label}
+                          </span>
+                          {timestamp.relative && (
+                            <div className="text-[10px] text-green-600 mt-1">
+                              {timestamp.relative}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))
+                      );
+                    })
                 ) : (
                   <div className="text-center py-8 bg-green-50 rounded-lg border-2 border-green-200">
                     <div className="text-4xl mb-2">🏃‍♂️</div>
