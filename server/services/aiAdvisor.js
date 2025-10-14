@@ -1,7 +1,20 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const FALLBACK_MODEL = 'gemini-1.5-flash';
-const MODEL_FALLBACK_CHAIN = [FALLBACK_MODEL, 'gemini-1.5-flash-001', 'gemini-pro'];
+const FALLBACK_MODEL = 'gemini-2.5-flash';
+const MODEL_FALLBACK_CHAIN = [
+  FALLBACK_MODEL,
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash-001',
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-pro-latest',
+  'gemini-2.5-flash-preview-05-20',
+  'gemini-2.5-flash-lite-preview-05-20',
+  'gemini-2.5-pro-preview-05-06'
+];
 const API_VERSION_FALLBACK_CHAIN = ['v1beta', 'v1'];
 
 const normalizeModelName = (name) => {
