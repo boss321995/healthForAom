@@ -7,7 +7,6 @@ import NotificationSystem from './NotificationSystem';
 import HealthReportPDF from './HealthReportPDF';
 import HealthReportPDF_Thai from './HealthReportPDF_Thai';
 import HealthChatbot from './HealthChatbot';
-import MedicalImageAnalysis from './MedicalImageAnalysis';
 import axios from 'axios';
 
 const Dashboard = () => {
@@ -2195,7 +2194,6 @@ const Dashboard = () => {
             { id: 'overview', label: 'ภาพรวม', icon: '📊' },
             { id: 'trends', label: 'แนวโน้มสุขภาพ', icon: '📈' },
             { id: 'analytics', label: 'การวิเคราะห์ AI', icon: '🧠' },
-            { id: 'medical-imaging', label: 'วิเคราะห์ภาพการแพทย์', icon: '🔬' },
             { id: 'metrics', label: 'ค่าตรวจสุขภาพ', icon: '🩺' },
             { id: 'behaviors', label: 'พฤติกรรม', icon: '🏃' },
             { id: 'profile', label: 'โปรไฟล์', icon: '👤' }
@@ -3018,11 +3016,6 @@ const Dashboard = () => {
             calculateHealthScore={calculateHealthScore}
             generateHealthInsights={generateHealthInsights}
           />
-        )}
-
-        {/* Medical Image Analysis Tab */}
-        {activeTab === 'medical-imaging' && (
-          <MedicalImageAnalysis />
         )}
 
         {/* Metrics Tab */}

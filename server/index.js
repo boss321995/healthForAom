@@ -720,6 +720,7 @@ app.get('/api', (req, res) => {
       'POST /api/health-behaviors - Add health behaviors',
       'GET /api/health-summary - Get health summary',
       'GET /api/current-bmi - Get current BMI',
+      'POST /api/health-analytics/import-json - Import medical data from JSON (requires auth)',
       'POST /api/setup/migrate - Database migration',
       'GET /api/setup/tables - List database tables'
     ]
@@ -2415,6 +2416,251 @@ app.get('/api/health-analytics/insights', authenticateToken, async (req, res) =>
       success: false,
       error: 'Failed to generate health insights'
     });
+  }
+});
+
+// Import health data (medical conditions/medications) via JSON payload
+app.post('/api/health-analytics/import-json', authenticateToken, async (req, res) => {
+  if (!db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database connection not available'
+    });
+  }
+
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'JSON payload is required'
+    });
+  }
+
+  const userId = req.user.userId;
+
+  const toTextList = (value) => {
+    if (value == null) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      const list = value
+        .map((item) => {
+          if (item == null) {
+            return null;
+          }
+          if (typeof item === 'string') {
+            return item.trim();
+          }
+          if (typeof item === 'object') {
+            const preferred = item.label || item.name || item.title || item.description;
+            if (preferred && typeof preferred === 'string') {
+              return preferred.trim();
+            }
+            return JSON.stringify(item);
+          }
+          return String(item).trim();
+        })
+        .filter(Boolean);
+
+      return list.length > 0 ? list.join('\n') : null;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() || null;
+    }
+
+    if (typeof value === 'object') {
+      const list = Object.values(value)
+        .map((item) => (typeof item === 'string' ? item.trim() : JSON.stringify(item)))
+        .filter(Boolean);
+      return list.length > 0 ? list.join('\n') : null;
+    }
+
+    return String(value).trim();
+  };
+
+  const extractMedicationsArray = (input) => {
+    if (!input) {
+      return [];
+    }
+    if (Array.isArray(input)) {
+      return input;
+    }
+    if (typeof input === 'object') {
+      return Object.values(input).flat().filter(Boolean);
+    }
+    return [];
+  };
+
+  const medicationList = extractMedicationsArray(
+    payload.medications ??
+    payload.medication_list ??
+    payload.currentMedications ??
+    payload.meds
+  );
+
+  const medicalConditionsText = toTextList(
+    payload.medical_conditions ??
+    payload.medicalConditions ??
+    payload.conditions ??
+    payload.chronicDiseases
+  );
+
+  const allergiesText = toTextList(
+    payload.allergies ??
+    payload.allergy ??
+    payload.allergic_reactions
+  );
+
+  const profileMedicationSummary = medicationList.length > 0
+    ? medicationList
+        .map((item) => {
+          if (!item) return null;
+          const name = item.name || item.medication_name || item.title || 'ไม่ระบุชื่อยา';
+          const dosage = item.dosage || item.dose || item.dose_mg || item.amount;
+          const frequency = item.frequency || item.times_per_day || item.frequency_per_day;
+          const pieces = [name.trim()];
+          if (dosage) {
+            pieces.push(typeof dosage === 'string' ? dosage.trim() : `${dosage}`);
+          }
+          if (frequency) {
+            pieces.push(`(${typeof frequency === 'string' ? frequency.trim() : `${frequency}`} )`);
+          }
+          return pieces.join(' ').replace(/\s+/g, ' ').trim();
+        })
+        .filter(Boolean)
+        .join('\n')
+    : toTextList(payload.medications_summary ?? payload.medicationsText ?? payload.medications);
+
+  const notesText = toTextList(payload.notes ?? payload.remarks ?? payload.comments);
+
+  if (!medicalConditionsText && !profileMedicationSummary && !allergiesText && medicationList.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'No supported medical data found in JSON payload'
+    });
+  }
+
+  const client = await db.connect();
+  let insertedMedications = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    const profileResult = await client.query(
+      'SELECT profile_id FROM user_profiles WHERE user_id = $1 LIMIT 1',
+      [userId]
+    );
+
+    if (profileResult.rows.length === 0) {
+      await client.query(
+        `INSERT INTO user_profiles (
+          user_id,
+          medical_conditions,
+          medications,
+          allergies,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)` ,
+        [userId, medicalConditionsText, profileMedicationSummary, allergiesText]
+      );
+    } else {
+      await client.query(
+        `UPDATE user_profiles
+         SET medical_conditions = COALESCE($2, medical_conditions),
+             medications = COALESCE($3, medications),
+             allergies = COALESCE($4, allergies),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1`,
+        [userId, medicalConditionsText, profileMedicationSummary, allergiesText]
+      );
+    }
+
+    if (medicationList.length > 0) {
+      await client.query('DELETE FROM medications WHERE user_id = $1', [userId]);
+
+      for (const raw of medicationList) {
+        if (!raw) continue;
+        const name = (raw.name || raw.medication_name || raw.title || '').trim();
+        if (!name) {
+          continue;
+        }
+
+        const dosageRaw = raw.dosage || raw.dose || raw.dose_mg || raw.amount || 'ไม่ระบุ';
+        const frequencyRaw = raw.frequency || raw.times_per_day || raw.frequency_per_day || raw.schedule || 'ไม่ระบุ';
+        const timeSchedule = raw.time_schedule || raw.timing || raw.period || 'ไม่ระบุ';
+        const startDate = raw.start_date || raw.startDate || null;
+        const endDate = raw.end_date || raw.endDate || null;
+        const condition = raw.condition || raw.indication || raw.for || null;
+        const reminderEnabled = raw.reminder_enabled ?? raw.reminderEnabled ?? true;
+        const notes = raw.notes || raw.note || null;
+
+        await client.query(
+          `INSERT INTO medications (
+            user_id,
+            medication_name,
+            dosage,
+            frequency,
+            time_schedule,
+            start_date,
+            end_date,
+            condition,
+            reminder_enabled,
+            notes
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)` ,
+          [
+            userId,
+            name,
+            typeof dosageRaw === 'string' ? dosageRaw.trim() : String(dosageRaw),
+            typeof frequencyRaw === 'string' ? frequencyRaw.trim() : String(frequencyRaw),
+            typeof timeSchedule === 'string' ? timeSchedule.trim() : String(timeSchedule),
+            startDate ? new Date(startDate) : null,
+            endDate ? new Date(endDate) : null,
+            condition ? String(condition).trim() : null,
+            Boolean(reminderEnabled),
+            notes ? String(notes).trim() : null
+          ]
+        );
+        insertedMedications += 1;
+      }
+    }
+
+    await client.query(
+      `INSERT INTO activity_logs (user_id, action, details)
+       VALUES ($1, $2, $3)` ,
+      [
+        userId,
+        'import_medical_json',
+        {
+          source: payload.source || 'manual-import',
+          imported_medications: insertedMedications,
+          has_conditions: Boolean(medicalConditionsText),
+          has_allergies: Boolean(allergiesText)
+        }
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Medical data imported successfully',
+      imported: {
+        medical_conditions: Boolean(medicalConditionsText),
+        medications_summary: Boolean(profileMedicationSummary),
+        allergies: Boolean(allergiesText),
+        medications_records: insertedMedications
+      }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error importing medical JSON:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to import medical data from JSON'
+    });
+  } finally {
+    client.release();
   }
 });
 
