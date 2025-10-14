@@ -38,7 +38,15 @@ const Dashboard = () => {
   const [medicationHistory, setMedicationHistory] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [aiRecommendations, setAiRecommendations] = useState([]);
-  const [aiStatus, setAiStatus] = useState({ active: false, connected: false, loading: false, lastUpdated: null });
+  const [aiStatus, setAiStatus] = useState({
+    active: false,
+    connected: false,
+    loading: false,
+    lastUpdated: null,
+    mode: 'offline',
+    engine: null,
+    reason: null
+  });
   const [aiRecommendationError, setAiRecommendationError] = useState(null);
 
   // Helper function to get full name
@@ -134,6 +142,13 @@ const Dashboard = () => {
       const normalized = { ...m };
       // Date field fallback
       normalized.measurement_date = m.measurement_date || m.date || m.record_date || m.created_at || null;
+      normalized.recorded_at = m.recorded_at || m.created_at || m.updated_at || null;
+      if (!normalized.created_at && normalized.recorded_at) {
+        normalized.created_at = normalized.recorded_at;
+      }
+      if (!normalized.updated_at && m.updated_at) {
+        normalized.updated_at = m.updated_at;
+      }
       // BP & heart rate fallbacks
       if (normalized.systolic_bp == null) {
         normalized.systolic_bp = m.blood_pressure_systolic ?? m.systolic ?? null;
@@ -162,7 +177,7 @@ const Dashboard = () => {
     if (!item) {
       return 0;
     }
-    const raw = item.record_date || item.behavior_date || item.measurement_date || item.created_at || item.date;
+    const raw = item.recorded_at || item.created_at || item.record_date || item.behavior_date || item.measurement_date || item.updated_at || item.date;
     if (!raw) {
       return 0;
     }
@@ -200,6 +215,15 @@ const Dashboard = () => {
 
     return entries.sort((a, b) => (b.__timestamp || 0) - (a.__timestamp || 0));
   }, [recentMetrics]);
+
+  const conditionBasedTips = useMemo(() => buildConditionBasedTips(), [userProfile, medications]);
+
+  const combinedAiTips = useMemo(() => {
+    if (aiRecommendations && aiRecommendations.length > 0) {
+      return aiRecommendations;
+    }
+    return conditionBasedTips;
+  }, [aiRecommendations, conditionBasedTips]);
 
   const getLatestBehaviorValue = (fields, { numeric = true, allowZero = false } = {}) => {
     if (!Array.isArray(fields)) {
@@ -329,12 +353,21 @@ const Dashboard = () => {
       sleep: { title: 'การนอนหลับ', icon: '😴', color: 'purple' },
       mental: { title: 'สุขภาพจิต', icon: '🧠', color: 'orange' },
       stress: { title: 'การจัดการความเครียด', icon: '🧘‍♀️', color: 'orange' },
-      hydration: { title: 'การดื่มน้ำ', icon: '💧', color: 'blue' }
+      hydration: { title: 'การดื่มน้ำ', icon: '💧', color: 'blue' },
+      medication: { title: 'การใช้ยา', icon: '💊', color: 'rose' },
+      medications: { title: 'การใช้ยา', icon: '💊', color: 'rose' },
+      treatment: { title: 'การรักษา', icon: '🏥', color: 'rose' },
+      monitoring: { title: 'การติดตามอาการ', icon: '📈', color: 'purple' },
+      warning: { title: 'สัญญาณเตือน', icon: '⚠️', color: 'red' },
+      safety: { title: 'ข้อควรระวัง', icon: '⚠️', color: 'red' }
     };
 
     const rawRecommendations = payload.recommendations;
     if (rawRecommendations && typeof rawRecommendations === 'object' && !Array.isArray(rawRecommendations)) {
       Object.entries(rawRecommendations).forEach(([key, value]) => {
+        if (key === 'meta') {
+          return;
+        }
         const meta = recommendationMeta[key] || { title: key, icon: '🤖', color: 'indigo' };
         appendListTip({
           title: `คำแนะนำด้าน${meta.title}`,
@@ -386,6 +419,49 @@ const Dashboard = () => {
         });
       }
     });
+
+    const keyConcerns = ensureArray(payload.keyConcerns || payload.key_concerns || payload.priorityRisks);
+    keyConcerns.forEach((item, index) => {
+      const content = normalizeText(item);
+      if (content) {
+        pushTip({
+          icon: '❗',
+          title: `จุดเสี่ยงที่ต้องโฟกัส ${index + 1}`,
+          content,
+          color: 'red'
+        });
+      }
+    });
+
+    const medicationNotes = ensureArray(payload.medicationNotes || payload.medication_notes || payload.drugAdvice);
+    if (medicationNotes.length > 0) {
+      appendListTip({
+        title: 'คำแนะนำเกี่ยวกับยา',
+        icon: '💊',
+        color: 'rose',
+        values: medicationNotes
+      });
+    }
+
+    const monitoringPlan = ensureArray(payload.monitoringPlan || payload.monitoring_plan || payload.follow_up_plan);
+    if (monitoringPlan.length > 0) {
+      appendListTip({
+        title: 'สิ่งที่ต้องเฝ้าระวัง',
+        icon: '📈',
+        color: 'purple',
+        values: monitoringPlan
+      });
+    }
+
+    const followUp = payload.followUp || payload.follow_up || payload.nextCheck;
+    if (followUp) {
+      pushTip({
+        icon: '📅',
+        title: 'แผนติดตามผล',
+        content: normalizeText(followUp),
+        color: 'teal'
+      });
+    }
 
     const nextActions = ensureArray(payload.nextActions);
     nextActions.forEach((action) => {
@@ -442,6 +518,137 @@ const Dashboard = () => {
       default:
         return 'bg-gray-50 border-gray-300 text-gray-800';
     }
+  };
+
+  const parseTextList = (value) => {
+    if (!value) return [];
+
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => {
+          if (item == null) return null;
+          if (typeof item === 'string') return item.trim();
+          if (typeof item === 'object') {
+            const preferred = item.name || item.label || item.title || item.description;
+            if (preferred) return String(preferred).trim();
+            return JSON.stringify(item);
+          }
+          return String(item).trim();
+        })
+        .filter(Boolean);
+    }
+
+    return String(value)
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const createConditionAdvice = (rawCondition) => {
+    if (!rawCondition) return null;
+
+    const condition = rawCondition.toLowerCase();
+
+    if (condition.includes('ความดัน') || condition.includes('hypertension')) {
+      return `ความดันสูง: ลดโซเดียมในอาหาร ออกกำลังกายระดับปานกลาง วัดความดันสม่ำเสมอ และปรึกษาแพทย์หากเวียนศีรษะหรือมีอาการผิดปกติ`;
+    }
+
+    if (condition.includes('เบาหวาน') || condition.includes('diabetes')) {
+      return `เบาหวาน: ควบคุมระดับน้ำตาลด้วยการเลือกอาหารมื้อย่อย วัดน้ำตาลตามแพทย์สั่ง และสังเกตรอยแผลที่หายช้า`;
+    }
+
+    if (condition.includes('ไขมัน') || condition.includes('cholesterol')) {
+      return `ไขมันในเลือดสูง: ลดอาหารทอดและมันสัตว์ เพิ่มผักผลไม้ และตรวจระดับไขมันตามเวลาที่แพทย์นัด`;
+    }
+
+    if (condition.includes('หัวใจ') || condition.includes('cardio')) {
+      return `โรคหัวใจ: จำกัดอาหารเค็มและมัน ออกกำลังกายที่ไม่หักโหม และรีบพบแพทย์เมื่อมีอาการเจ็บหน้าอก หายใจหอบ หรือเหนื่อยง่ายผิดปกติ`;
+    }
+
+    return `ติดตามอาการของ "${rawCondition}" อย่างต่อเนื่อง รักษาตามแพทย์แนะนำ และแจ้งทีมแพทย์หากมีผลข้างเคียงจากยา`;
+  };
+
+  const buildMedicationSummary = (med) => {
+    if (!med) return null;
+    const name = med.medication_name || med.name || med.title;
+    if (!name) return null;
+
+    const parts = [name.trim()];
+
+    const dosage = med.dosage || med.dose || med.dose_mg || med.amount;
+    if (dosage) {
+      parts.push(`ขนาดยา: ${typeof dosage === 'string' ? dosage.trim() : `${dosage}`}`);
+    }
+
+    const frequency = med.frequency || med.times_per_day || med.frequency_per_day;
+    if (frequency) {
+      parts.push(`ความถี่: ${typeof frequency === 'string' ? frequency.trim() : `${frequency}`}`);
+    }
+
+    const schedule = med.time_schedule || med.timing || med.period;
+    if (schedule) {
+      parts.push(`ช่วงเวลา: ${typeof schedule === 'string' ? schedule.trim() : `${schedule}`}`);
+    }
+
+    return parts.join(' • ');
+  };
+
+  const buildConditionBasedTips = () => {
+    const tips = [];
+
+    const medicalConditions = parseTextList(userProfile?.medical_conditions);
+    if (medicalConditions.length > 0) {
+      const adviceList = medicalConditions
+        .map((condition) => createConditionAdvice(condition))
+        .filter(Boolean);
+      if (adviceList.length > 0) {
+        tips.push({
+          icon: '🩺',
+          title: 'คำแนะนำสำหรับโรคประจำตัว',
+          items: Array.from(new Set(adviceList)),
+          color: 'purple'
+        });
+      }
+    }
+
+    const medicationCards = [];
+
+    if (medications && medications.length > 0) {
+      const medicationSummaries = medications
+        .map((med) => buildMedicationSummary(med))
+        .filter(Boolean);
+      if (medicationSummaries.length > 0) {
+        medicationCards.push({
+          icon: '💊',
+          title: 'ยาที่ใช้อยู่',
+          items: medicationSummaries,
+          color: 'blue'
+        });
+      }
+    }
+
+    if (medicationCards.length === 0) {
+      const profileMedicationList = parseTextList(userProfile?.medications);
+      if (profileMedicationList.length > 0) {
+        medicationCards.push({
+          icon: '💊',
+          title: 'ยาที่ใช้อยู่',
+          items: profileMedicationList,
+          color: 'blue'
+        });
+      }
+    }
+
+    if (medicalConditions.length > 0 || medicationCards.length > 0) {
+      medicationCards.push({
+        icon: '⚕️',
+        title: 'ข้อควรระวังเกี่ยวกับยา',
+        content: 'หากมียาใหม่ที่ยังไม่คุ้นเคย ให้ตรวจสอบการโต้ตอบกับยาตัวอื่นและแจ้งแพทย์ทันทีเมื่อมีอาการผิดปกติ เช่น เวียนศีรษะ บวม หรือหายใจไม่สะดวก',
+        color: 'orange'
+      });
+    }
+
+    return [...tips, ...medicationCards];
   };
 
   // Form state for health metrics
@@ -581,9 +788,9 @@ const Dashboard = () => {
         type: 'metrics',
         data: metric,
         description: `บันทึกค่าตรวจสุขภาพ - ${metric.measurement_date}`,
-        timestamp: new Date(metric.created_at || metric.measurement_date),
-        date: new Date(metric.measurement_date).toLocaleDateString('th-TH'),
-        time: new Date(metric.created_at || metric.measurement_date).toLocaleTimeString('th-TH', { 
+        timestamp: new Date(metric.recorded_at || metric.created_at || metric.measurement_date),
+        date: new Date(metric.measurement_date || metric.recorded_at || metric.created_at).toLocaleDateString('th-TH'),
+        time: new Date(metric.recorded_at || metric.created_at || metric.measurement_date).toLocaleTimeString('th-TH', { 
           hour: '2-digit', 
           minute: '2-digit' 
         })
@@ -595,9 +802,9 @@ const Dashboard = () => {
         type: 'behaviors',
         data: behavior,
         description: `บันทึกพฤติกรรมสุขภาพ - ${behavior.record_date}`,
-        timestamp: new Date(behavior.created_at || behavior.record_date),
+        timestamp: new Date(behavior.recorded_at || behavior.created_at || behavior.record_date),
         date: new Date(behavior.record_date).toLocaleDateString('th-TH'),
-        time: new Date(behavior.created_at || behavior.record_date).toLocaleTimeString('th-TH', { 
+        time: new Date(behavior.recorded_at || behavior.created_at || behavior.record_date).toLocaleTimeString('th-TH', { 
           hour: '2-digit', 
           minute: '2-digit' 
         }),
@@ -637,15 +844,19 @@ const Dashboard = () => {
       console.log('📋 Data history sample:', combinedHistory.slice(0, 3));
       
       // อัปเดต recentMetrics ให้รวมข้อมูลจาก behaviors ด้วย แต่แยกประเภทชัดเจน
-  const combinedMetrics = [...metrics, ...behaviors]
-        .sort((a, b) => new Date(b.created_at || b.record_date || b.measurement_date) - new Date(a.created_at || a.record_date || a.measurement_date))
-        .slice(0, 10);
+      const combinedMetrics = [...metrics, ...behaviors]
+        .map((item) => ({ ...item, __timestamp: getRecordTimestamp(item) }))
+        .sort((a, b) => (b.__timestamp || 0) - (a.__timestamp || 0))
+        .slice(0, 10)
+        .map(({ __timestamp, ...rest }) => rest);
       setRecentMetrics(combinedMetrics);
       
       // อัปเดต recentMetrics สำหรับการคำนวณ BMI (เฉพาะ metrics)
       const metricsOnly = metrics
-        .sort((a, b) => new Date(b.created_at || b.measurement_date) - new Date(a.created_at || a.measurement_date))
-        .slice(0, 5);
+        .map((item) => ({ ...item, __timestamp: getRecordTimestamp(item) }))
+        .sort((a, b) => (b.__timestamp || 0) - (a.__timestamp || 0))
+        .slice(0, 5)
+        .map(({ __timestamp, ...rest }) => rest);
       
       // ถ้ามี metrics ใหม่ ให้อัปเดต state สำหรับ BMI calculation
       if (metricsOnly.length > 0) {
@@ -708,19 +919,43 @@ const Dashboard = () => {
         setMedicationHistory([]);
         setUserProfile(null);
         setAiRecommendations([]);
-        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        setAiStatus({
+          active: false,
+          connected: false,
+          loading: false,
+          lastUpdated: null,
+          mode: 'offline',
+          engine: null,
+          reason: null
+        });
         return;
       }
 
       if (isMockToken) {
         console.log('ℹ️ ใช้งานโหมดจำลอง (mock token) - ข้ามการเรียก API ที่ต้องมีการยืนยันตัวตน');
-        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        setAiStatus({
+          active: false,
+          connected: false,
+          loading: false,
+          lastUpdated: null,
+          mode: 'mock',
+          engine: null,
+          reason: null
+        });
         setAiRecommendations([]);
         await fetchDataHistory(tokenToUse);
         return;
       }
 
-      setAiStatus({ active: true, connected: false, loading: true, lastUpdated: null });
+      setAiStatus({
+        active: true,
+        connected: false,
+        loading: true,
+        lastUpdated: null,
+        mode: 'loading',
+        engine: null,
+        reason: null
+      });
 
       const headers = { Authorization: `Bearer ${tokenToUse}` };
 
@@ -802,13 +1037,17 @@ const Dashboard = () => {
       try {
         const insightsResponse = await axios.get('/api/health-analytics/insights', { headers });
         const aiData = insightsResponse.data?.data ?? insightsResponse.data;
+        const aiMeta = aiData?.recommendations?.meta || {};
         const formatted = formatAiRecommendations(aiData);
         setAiRecommendations(formatted);
         setAiStatus({
           active: true,
           connected: true,
           loading: false,
-          lastUpdated: insightsResponse.data?.generatedAt || new Date().toISOString()
+          lastUpdated: insightsResponse.data?.generatedAt || aiMeta.generatedAt || new Date().toISOString(),
+          mode: aiMeta.source || 'ai',
+          engine: aiMeta.model || 'Gemini',
+          reason: aiMeta.reason || null
         });
         console.log('🤖 AI insights loaded:', formatted.length, 'tips');
       } catch (error) {
@@ -820,7 +1059,15 @@ const Dashboard = () => {
           : error.response?.data?.error || 'ไม่สามารถเชื่อมต่อบริการ AI ได้ในขณะนี้';
         setAiRecommendations([]);
         setAiRecommendationError(errorMessage);
-        setAiStatus({ active: true, connected: false, loading: false, lastUpdated: null });
+        setAiStatus({
+          active: true,
+          connected: false,
+          loading: false,
+          lastUpdated: null,
+          mode: 'error',
+          engine: null,
+          reason: errorMessage
+        });
       }
 
       await fetchDataHistory(tokenToUse);
@@ -835,7 +1082,15 @@ const Dashboard = () => {
         setMedicationHistory([]);
         setUserProfile(null);
         setAiRecommendations([]);
-        setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+        setAiStatus({
+          active: false,
+          connected: false,
+          loading: false,
+          lastUpdated: null,
+          mode: 'offline',
+          engine: null,
+          reason: 'auth_required'
+        });
         setAiRecommendationError('กรุณาเข้าสู่ระบบใหม่เพื่อโหลดข้อมูลล่าสุด');
         return;
       }
@@ -859,7 +1114,15 @@ const Dashboard = () => {
         profile_completed: false
       });
       setAiRecommendations([]);
-      setAiStatus({ active: false, connected: false, loading: false, lastUpdated: null });
+      setAiStatus({
+        active: false,
+        connected: false,
+        loading: false,
+        lastUpdated: null,
+        mode: 'error',
+        engine: null,
+        reason: error.message
+      });
       setAiRecommendationError('ไม่สามารถโหลดคำแนะนำจาก AI ได้');
     } finally {
       setLoading(false);
@@ -1583,6 +1846,8 @@ const Dashboard = () => {
       return null;
     }
     const candidates = [
+      record.recorded_at,
+      record.recordedAt,
       record.measurement_date,
       record.measurementDate,
       record.record_date,
@@ -2718,19 +2983,35 @@ const Dashboard = () => {
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-indigo-900 font-semibold text-sm border-b border-indigo-200 pb-1 flex items-center">
-                        <span className="mr-2">🤖</span>
-                        {aiStatus.loading
-                          ? 'AI กำลังวิเคราะห์ข้อมูล...'
-                          : aiStatus.connected
-                            ? 'คำแนะนำจาก AI'
-                            : 'AI Insight (โหมดออฟไลน์)'}
-                      </h4>
-                      {aiStatus.lastUpdated && (
-                        <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                          อัปเดต {formatRelativeTime(aiStatus.lastUpdated)}
+                      <h4 className="text-indigo-900 font-semibold text-sm border-b border-indigo-200 pb-1 flex items-center space-x-2">
+                        <span>🤖</span>
+                        <span>
+                          {aiStatus.loading
+                            ? 'AI กำลังวิเคราะห์ข้อมูล...'
+                            : aiStatus.mode === 'fallback'
+                              ? 'คำแนะนำสำรองจากข้อมูลในระบบ'
+                              : aiStatus.connected
+                                ? 'คำแนะนำจาก AI'
+                                : 'AI Insight (โหมดออฟไลน์)'}
                         </span>
-                      )}
+                        {!aiStatus.loading && aiStatus.engine && (
+                          <span className="text-[10px] uppercase tracking-wide bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                            {aiStatus.engine}
+                          </span>
+                        )}
+                      </h4>
+                      <div className="flex items-center space-x-2">
+                        {aiStatus.lastUpdated && (
+                          <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            อัปเดต {formatRelativeTime(aiStatus.lastUpdated)}
+                          </span>
+                        )}
+                        {!aiStatus.loading && aiStatus.mode === 'fallback' && (
+                          <span className="text-[10px] text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                            ใช้คำแนะนำสำรองชั่วคราว
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {aiStatus.loading && (
@@ -2749,14 +3030,14 @@ const Dashboard = () => {
                       </div>
                     )}
 
-                    {!aiStatus.loading && !aiRecommendationError && aiRecommendations.length === 0 && (
+                    {!aiStatus.loading && !aiRecommendationError && combinedAiTips.length === 0 && (
                       <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-3 text-gray-700 text-xs">
                         AI ยังไม่มีคำแนะนำเพิ่มเติม เติมข้อมูลสุขภาพให้ครบถ้วนเพื่อรับ insight มากขึ้น
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 gap-2">
-                      {aiRecommendations.slice(0, 6).map((tip, index) => (
+                      {combinedAiTips.slice(0, 6).map((tip, index) => (
                         <div key={`ai-tip-${index}`} className={`${getTipClassName(tip.color)} border-2 rounded p-3 shadow-sm transition-transform hover:-translate-y-0.5`}>
                           <div className="flex items-start space-x-2">
                             <span className="text-lg flex-shrink-0">{tip.icon || '🤖'}</span>
@@ -2780,7 +3061,7 @@ const Dashboard = () => {
                       ))}
                     </div>
 
-                    {aiRecommendations.length > 6 && (
+                    {combinedAiTips.length > 6 && (
                       <div className="mt-2 text-right">
                         <button
                           onClick={() => setActiveTab('analysis')}

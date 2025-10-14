@@ -1662,14 +1662,16 @@ app.get('/api/health-behaviors', authenticateToken, async (req, res) => {
     const { startDate, endDate, limit = 10 } = req.query;
     
     let query = `
-      SELECT behavior_id, behavior_date AS record_date,
-             smoking_cigarettes,
-             alcohol_units,
-             exercise_minutes AS exercise_duration_minutes,
-             sleep_hours AS sleep_hours_per_night,
-             stress_level,
-             (water_intake_ml::decimal / 1000.0) AS water_intake_liters,
-             notes
+      SELECT behavior_id,
+        behavior_date AS record_date,
+        smoking_cigarettes,
+        alcohol_units,
+        exercise_minutes AS exercise_duration_minutes,
+        sleep_hours AS sleep_hours_per_night,
+        stress_level,
+        (water_intake_ml::decimal / 1000.0) AS water_intake_liters,
+        notes,
+        recorded_at
       FROM health_behavior
       WHERE user_id = $1`;
     const params = [req.user.userId];

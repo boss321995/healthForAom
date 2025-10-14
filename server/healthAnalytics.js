@@ -1,4 +1,4 @@
-import express from 'express';
+import { generateHealthAdvice } from './services/aiAdvisor.js';
 // Note: Database connection will be passed from main server
 // No direct database import needed
 
@@ -8,11 +8,110 @@ class HealthAnalytics {
     this.db = dbConnection;
   }
 
+  parseList(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item.trim() : item))
+        .filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(/[\r\n,;•\u2022\u2023]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  normalizeHealthHistory(records = [], profile = {}) {
+    const heightCm = profile?.height_cm ?? profile?.height ?? null;
+    return records.map((record) => {
+      const weightValue = record.weight_kg ?? record.weight ?? record.weightKg ?? record.body_weight ?? null;
+      const parsedWeight = weightValue != null && !Number.isNaN(Number(weightValue)) ? Number(weightValue) : null;
+      const normalized = {
+        ...record,
+        weight_kg: parsedWeight,
+        weight: parsedWeight,
+        height: heightCm != null && !Number.isNaN(Number(heightCm)) ? Number(heightCm) : null,
+        height_cm: heightCm != null && !Number.isNaN(Number(heightCm)) ? Number(heightCm) : null,
+      };
+      return normalized;
+    });
+  }
+
+  normalizeBehaviorHistory(records = []) {
+    return records.map((record) => {
+      const exerciseMinutes = record.exercise_duration_minutes ?? record.exercise_minutes ?? record.exercise_duration ?? null;
+      const sleepHours = record.sleep_hours_per_night ?? record.sleep_hours ?? null;
+      return {
+        ...record,
+        exercise_duration_minutes:
+          exerciseMinutes != null && !Number.isNaN(Number(exerciseMinutes)) ? Number(exerciseMinutes) : null,
+        sleep_hours_per_night:
+          sleepHours != null && !Number.isNaN(Number(sleepHours)) ? Number(sleepHours) : null,
+        stress_level:
+          record.stress_level != null && !Number.isNaN(Number(record.stress_level)) ? Number(record.stress_level) : null,
+      };
+    });
+  }
+
+  async getUserProfile(userId) {
+    if (!this.db) return null;
+    try {
+      const query = `
+        SELECT up.*, u.username, u.email
+        FROM user_profiles up
+        JOIN users u ON u.id = up.user_id
+        WHERE up.user_id = $1
+        ORDER BY up.updated_at DESC NULLS LAST
+        LIMIT 1
+      `;
+      const result = await this.db.query(query, [userId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('❌ Error fetching user profile for AI advisor:', error.message);
+      return null;
+    }
+  }
+
+  async getActiveMedications(userId) {
+    if (!this.db) return [];
+    try {
+      const query = `
+        SELECT medication_name, dosage, frequency, time_schedule, start_date, end_date, condition, reminder_enabled, notes
+        FROM medications
+        WHERE user_id = $1 AND (is_active = TRUE OR is_active IS NULL)
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+      `;
+      const result = await this.db.query(query, [userId]);
+      return result.rows || [];
+    } catch (error) {
+      // Table might not exist yet
+      if (error.code === '42P01') {
+        console.warn('ℹ️ Medications table not available for AI advisor context yet');
+        return [];
+      }
+      console.error('❌ Error fetching medications for AI advisor:', error.message);
+      return [];
+    }
+  }
+
   // วิเคราะห์แนวโน้มสุขภาพของผู้ใช้
   async analyzeHealthTrends(userId, timeRange = '6months') {
     try {
-      const healthHistory = await this.getHealthHistory(userId, timeRange);
-      const behaviorHistory = await this.getBehaviorHistory(userId, timeRange);
+      const [healthHistoryRaw, behaviorHistoryRaw, profile] = await Promise.all([
+        this.getHealthHistory(userId, timeRange),
+        this.getBehaviorHistory(userId, timeRange),
+        this.getUserProfile(userId)
+      ]);
+
+      const activeMedications = await this.getActiveMedications(userId);
+      const profileConditions = this.parseList(profile?.medical_conditions);
+      const profileMedications = this.parseList(profile?.medications);
+
+      const healthHistory = this.normalizeHealthHistory(healthHistoryRaw, profile || {});
+      const behaviorHistory = this.normalizeBehaviorHistory(behaviorHistoryRaw);
       
       console.log('📊 Health history count:', healthHistory.length);
       console.log('🏃 Behavior history count:', behaviorHistory.length);
@@ -28,7 +127,14 @@ class HealthAnalytics {
       console.log('📈 Generated trends:', trends);
 
       // ใช้ AI ให้คำแนะนำตามแนวโน้ม
-      const aiRecommendations = await this.generateTrendRecommendations(trends);
+      const aiRecommendations = await this.generateTrendRecommendations(trends, {
+        profile,
+        healthHistory,
+        behaviorHistory,
+        medications: activeMedications,
+        profileMedications,
+        profileConditions
+      });
       
       return {
         success: true,
@@ -36,7 +142,15 @@ class HealthAnalytics {
           trends,
           recommendations: aiRecommendations,
           riskFactors: this.identifyRiskFactors(trends),
-          improvements: this.identifyImprovements(trends)
+          improvements: this.identifyImprovements(trends),
+          context: {
+            profileAvailable: Boolean(profile),
+            conditionCount: profileConditions.length,
+            medicationSources: {
+              activeMedications: activeMedications.length,
+              profileMedicationEntries: profileMedications.length
+            }
+          }
         }
       };
     } catch (error) {
@@ -245,21 +359,39 @@ class HealthAnalytics {
   }
 
   // สร้างคำแนะนำจาก AI ตามแนวโน้ม
-  async generateTrendRecommendations(trends) {
+  async generateTrendRecommendations(trends, context = {}) {
     try {
-      const trendSummary = {
-        bmi_trend: trends.bmi.trend,
-        bp_trend: trends.bloodPressure.trend,
-        sugar_trend: trends.bloodSugar.trend,
-        lifestyle_score: trends.overall.score,
-        risk_factors: trends.bloodPressure.riskLevel
-      };
+      const aiResult = await generateHealthAdvice({
+        trends,
+        profile: context.profile,
+        healthHistory: context.healthHistory,
+        behaviorHistory: context.behaviorHistory,
+        medications: context.medications,
+        profileMedications: context.profileMedications,
+        profileConditions: context.profileConditions
+      });
 
-      // return await getHealthRecommendations(trendSummary);
-      return this.getDefaultRecommendations();
+      if (aiResult?.success && aiResult.data) {
+        return {
+          ...aiResult.data,
+          meta: {
+            ...(aiResult.data.meta || {}),
+            source: 'ai',
+            generatedAt: new Date().toISOString()
+          }
+        };
+      }
+
+      console.warn('⚠️ Falling back to default recommendations:', aiResult?.reason);
+      return this.getDefaultRecommendations({
+        trends,
+        context,
+        failureReason: aiResult?.reason,
+        rawAiText: aiResult?.rawText
+      });
     } catch (error) {
       console.error('Error generating AI recommendations:', error);
-      return this.getDefaultRecommendations();
+      return this.getDefaultRecommendations({ trends, context, failureReason: error.message });
     }
   }
 
@@ -403,13 +535,112 @@ class HealthAnalytics {
     }
   }
 
-  getDefaultRecommendations() {
+  getDefaultRecommendations({ trends = {}, context = {}, failureReason = null } = {}) {
+    const dietTips = [];
+    const exerciseTips = [];
+    const lifestyleTips = [];
+    const medicationGuidance = [];
+    const monitoringTips = [];
+    const warningSignals = [];
+    const improvements = [];
+    const riskFactors = [];
+
+    const addUnique = (arr, value) => {
+      if (!value || arr.includes(value)) return;
+      arr.push(value);
+    };
+
+    const bpTrend = trends?.bloodPressure || {};
+    const bmiTrend = trends?.bmi || {};
+    const sugarTrend = trends?.bloodSugar || {};
+    const lifestyleTrend = trends?.lifestyle || {};
+
+    if (bpTrend.riskLevel === 'high') {
+      addUnique(dietTips, 'ลดการบริโภคโซเดียม เลี่ยงอาหารหมักดองและอาหารสำเร็จรูป');
+      addUnique(lifestyleTips, 'วัดความดันโลหิตอย่างน้อยวันละ 2 ครั้งและบันทึกไว้ทุกครั้ง');
+      addUnique(monitoringTips, 'ติดตามความดันโลหิตทุกเช้า-เย็น และพบแพทย์หากเกิน 140/90 mmHg');
+      addUnique(medicationGuidance, 'ทานยาลดความดันโลหิตตรงเวลา ห้ามหยุดยาเอง');
+      riskFactors.push({ title: 'ความดันโลหิตสูง', description: 'มีแนวโน้มความดันสูง ต้องควบคุมโซเดียมและติดตามใกล้ชิด' });
+      addUnique(warningSignals, 'หากมีอาการแน่นหน้าอก เวียนศีรษะ หรือปวดศีรษะรุนแรงให้พบแพทย์ทันที');
+    } else if (bpTrend.riskLevel === 'moderate') {
+      addUnique(dietTips, 'จำกัดอาหารรสเค็ม จัดเมนูที่ใช้สมุนไพรแทนเกลือ');
+      addUnique(monitoringTips, 'วัดความดันอย่างน้อยสัปดาห์ละ 3 ครั้ง');
+    }
+
+    if (bmiTrend.current && Number(bmiTrend.current) > 25) {
+      addUnique(dietTips, 'เพิ่มผักผลไม้ ลดน้ำตาลและอาหารทอดเพื่อควบคุมน้ำหนัก');
+      addUnique(exerciseTips, 'ออกกำลังกายแบบคาร์ดิโอระดับปานกลาง 150 นาทีต่อสัปดาห์ร่วมกับฝึกแรงต้าน');
+      riskFactors.push({ title: 'น้ำหนักเกิน', description: 'BMI สูงกว่ามาตรฐานต้องควบคุมการกินและออกกำลังกายสม่ำเสมอ' });
+    } else if (bmiTrend.trend === 'decreasing') {
+      addUnique(improvements, 'น้ำหนักมีแนวโน้มลดลง เป็นสัญญาณที่ดี ควรรักษาพฤติกรรมนี้ต่อเนื่อง');
+    }
+
+    if (sugarTrend.diabetesRisk === 'high') {
+      addUnique(dietTips, 'ลดคาร์โบไฮเดรตขัดสี เลือกธัญพืชไม่ขัดสีและเพิ่มไฟเบอร์ทุกมื้อ');
+      addUnique(monitoringTips, 'ตรวจระดับน้ำตาลปลายนิ้วตามที่แพทย์กำหนดและบันทึกค่า');
+      riskFactors.push({ title: 'ความเสี่ยงเบาหวาน', description: 'ระดับน้ำตาลสูง ต้องควบคุมอาหารและติดตาม HbA1c' });
+      addUnique(warningSignals, 'หากมีอาการกระหายน้ำ ปัสสาวะบ่อย หรือแผลหายช้า ให้ปรึกษาแพทย์');
+    } else if (sugarTrend.trend === 'decreasing') {
+      addUnique(improvements, 'น้ำตาลในเลือดมีแนวโน้มดีขึ้น รักษาพฤติกรรมการกินและออกกำลังกายต่อไป');
+    }
+
+    const exerciseAverage = lifestyleTrend?.exercise?.average;
+    if (exerciseAverage) {
+      const value = Number(exerciseAverage);
+      if (!Number.isNaN(value) && value < 150) {
+        addUnique(exerciseTips, 'ตั้งเป้าออกกำลังกายให้ครบอย่างน้อย 150 นาที/สัปดาห์');
+      } else if (!Number.isNaN(value) && value >= 150) {
+        addUnique(improvements, 'การออกกำลังกายเพียงพอแล้ว รักษาความสม่ำเสมอ');
+      }
+    }
+
+    const sleepAverage = lifestyleTrend?.sleep?.average;
+    if (sleepAverage) {
+      const value = Number(sleepAverage);
+      if (!Number.isNaN(value) && (value < 7 || value > 9)) {
+        addUnique(lifestyleTips, 'จัดเวลานอนให้ได้ 7-8 ชั่วโมงต่อคืนและหลีกเลี่ยงหน้าจอก่อนนอน');
+      } else if (!Number.isNaN(value)) {
+        addUnique(improvements, 'การนอนได้ตามเป้าหมาย 7-8 ชั่วโมง ถือว่าดี');
+      }
+    }
+
+    if (lifestyleTrend?.stress?.level === 'high') {
+      addUnique(lifestyleTips, 'ฝึกการหายใจลึก โยคะ หรือสมาธิวันละ 10 นาทีเพื่อลดความเครียด');
+      addUnique(monitoringTips, 'ประเมินความเครียดทุกสัปดาห์และหากนอนไม่หลับติดต่อกันควรพบแพทย์');
+      riskFactors.push({ title: 'ความเครียดสูง', description: 'ระดับความเครียดสูง อาจกระทบความดันและน้ำตาลในเลือด' });
+    }
+
+    const recommendations = {};
+  if (dietTips.length) recommendations.diet = [...dietTips];
+  if (exerciseTips.length) recommendations.exercise = [...exerciseTips];
+  if (lifestyleTips.length) recommendations.lifestyle = [...lifestyleTips];
+  if (medicationGuidance.length) recommendations.medication = [...medicationGuidance];
+  if (monitoringTips.length) recommendations.monitoring = [...monitoringTips];
+  if (warningSignals.length) recommendations.warning = [...warningSignals];
+
+    const overallParts = [];
+    if (bpTrend.riskLevel === 'high') overallParts.push('ความดันโลหิตยังสูง ต้องควบคุมอาหารและติดตามใกล้ชิด');
+    if (sugarTrend.diabetesRisk === 'high') overallParts.push('น้ำตาลในเลือดสูง ต้องควบคุมอาหารและพบแพทย์ตามนัด');
+    if (!overallParts.length) {
+      overallParts.push('ข้อมูล AI ไม่พร้อม จึงแสดงคำแนะนำทั่วไปตามแนวโน้มที่มีอยู่');
+    }
+
     return {
-      overall_assessment: "ควรปรึกษาแพทย์เพื่อประเมินสุขภาพ",
-      recommendations: {
-        diet: ["รับประทานอาหารที่มีประโยชน์"],
-        exercise: ["ออกกำลังกายสม่ำเสมอ"],
-        lifestyle: ["นอนหลับให้เพียงพอ"]
+      overall_assessment: overallParts.join(' '),
+      recommendations,
+      riskFactors,
+      improvements,
+  monitoringPlan: [...monitoringTips],
+  medicationNotes: [...medicationGuidance],
+      followUp: 'ติดตามผลกับแพทย์ประจำตัวภายใน 1-3 เดือนหรือเร็วกว่าหากมีอาการ',
+      meta: {
+        source: 'fallback',
+        reason: failureReason || 'ai_unavailable',
+        generatedAt: new Date().toISOString(),
+        usedContext: {
+          hasBehaviorHistory: Array.isArray(context?.behaviorHistory) && context.behaviorHistory.length > 0,
+          hasHealthHistory: Array.isArray(context?.healthHistory) && context.healthHistory.length > 0,
+        }
       }
     };
   }
