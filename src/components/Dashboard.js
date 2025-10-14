@@ -182,11 +182,20 @@ const Dashboard = () => {
     connected: false,
     loading: false,
     lastUpdated: null,
-    mode: 'offline',
+    mode: 'idle',
     engine: null,
     reason: null
   });
   const [aiRecommendationError, setAiRecommendationError] = useState(null);
+
+  const handleAuthError = (error, context) => {
+    if (error?.response?.status === 401 || error?.response?.status === 403) {
+      console.warn(`🔒 ${context} ล้มเหลวจากการยืนยันตัวตน`);
+      logout();
+      setSubmitMessage({ type: 'error', text: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง' });
+      throw new Error('AUTH_ERROR');
+    }
+  };
 
   // Helper function to get full name
   const getFullName = () => {
@@ -953,7 +962,7 @@ const Dashboard = () => {
           lastUpdated: null,
           mode: 'offline',
           engine: null,
-          reason: null
+          reason: 'auth_required'
         });
         return;
       }
@@ -977,23 +986,15 @@ const Dashboard = () => {
       setAiStatus({
         active: true,
         connected: false,
-        loading: true,
+        loading: false,
         lastUpdated: null,
-        mode: 'loading',
+        mode: 'idle',
         engine: null,
         reason: null
       });
+      setAiRecommendations([]);
 
       const headers = { Authorization: `Bearer ${tokenToUse}` };
-
-      const handleAuthError = (error, context) => {
-        if (error?.response?.status === 401 || error?.response?.status === 403) {
-          console.warn(`🔒 ${context} ล้มเหลวจากการยืนยันตัวตน`);
-          logout();
-          setSubmitMessage({ type: 'error', text: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง' });
-          throw new Error('AUTH_ERROR');
-        }
-      };
 
       try {
         const summaryResponse = await axios.get('/api/health-summary', { headers });
@@ -1061,42 +1062,6 @@ const Dashboard = () => {
         });
       }
 
-      try {
-        const insightsResponse = await axios.get('/api/health-analytics/insights', { headers });
-        const aiData = insightsResponse.data?.data ?? insightsResponse.data;
-        const aiMeta = aiData?.recommendations?.meta || {};
-        const formatted = formatAiRecommendations(aiData);
-        setAiRecommendations(formatted);
-        setAiStatus({
-          active: true,
-          connected: true,
-          loading: false,
-          lastUpdated: insightsResponse.data?.generatedAt || aiMeta.generatedAt || new Date().toISOString(),
-          mode: aiMeta.source || 'ai',
-          engine: aiMeta.model || 'Gemini',
-          reason: aiMeta.reason || null
-        });
-        console.log('🤖 AI insights loaded:', formatted.length, 'tips');
-      } catch (error) {
-        handleAuthError(error, 'AI insights');
-        console.error('Error fetching AI insights:', error.response?.status, error.response?.data || error.message);
-        const statusCode = error.response?.status;
-        const errorMessage = statusCode === 404
-          ? 'ยังไม่มีข้อมูลเพียงพอสำหรับการวิเคราะห์ AI'
-          : error.response?.data?.error || 'ไม่สามารถเชื่อมต่อบริการ AI ได้ในขณะนี้';
-        setAiRecommendations([]);
-        setAiRecommendationError(errorMessage);
-        setAiStatus({
-          active: true,
-          connected: false,
-          loading: false,
-          lastUpdated: null,
-          mode: 'error',
-          engine: null,
-          reason: errorMessage
-        });
-      }
-
       await fetchDataHistory(tokenToUse);
 
     } catch (error) {
@@ -1154,6 +1119,102 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
       setAiStatus(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const fetchAiInsights = async () => {
+    if (aiStatus.loading) {
+      return;
+    }
+
+    const tokenFromStorage = localStorage.getItem('healthToken');
+    const tokenToUse = authToken ?? tokenFromStorage;
+
+    if (!tokenToUse) {
+      setAiRecommendationError('กรุณาเข้าสู่ระบบเพื่อเรียกใช้คำแนะนำจาก AI');
+      setAiStatus({
+        active: false,
+        connected: false,
+        loading: false,
+        lastUpdated: null,
+        mode: 'offline',
+        engine: null,
+        reason: 'auth_required'
+      });
+      return;
+    }
+
+    if (tokenToUse.startsWith('mock-jwt-token-')) {
+      setAiRecommendationError('โหมดจำลองไม่รองรับคำแนะนำจาก AI');
+      setAiStatus({
+        active: false,
+        connected: false,
+        loading: false,
+        lastUpdated: null,
+        mode: 'mock',
+        engine: null,
+        reason: 'mock_mode'
+      });
+      return;
+    }
+
+    setAiRecommendationError(null);
+    setAiStatus((prev) => ({
+      ...prev,
+      active: true,
+      connected: false,
+      loading: true,
+      lastUpdated: prev.lastUpdated || null,
+      mode: 'loading',
+      engine: prev.engine,
+      reason: null
+    }));
+
+    const headers = { Authorization: `Bearer ${tokenToUse}` };
+
+    try {
+      const insightsResponse = await axios.get('/api/health-analytics/insights', { headers });
+      const aiData = insightsResponse.data?.data ?? insightsResponse.data;
+      const aiMeta = aiData?.recommendations?.meta || {};
+      const formatted = formatAiRecommendations(aiData);
+
+      setAiRecommendations(formatted);
+      setAiStatus({
+        active: true,
+        connected: true,
+        loading: false,
+        lastUpdated: insightsResponse.data?.generatedAt || aiMeta.generatedAt || new Date().toISOString(),
+        mode: aiMeta.source || 'ai',
+        engine: aiMeta.model || 'gemini-2.5-flash',
+        reason: aiMeta.reason || null
+      });
+      console.log('🤖 AI insights loaded:', formatted.length, 'tips');
+    } catch (error) {
+      try {
+        handleAuthError(error, 'AI insights');
+      } catch (authError) {
+        return;
+      }
+
+      console.error('Error fetching AI insights:', error.response?.status, error.response?.data || error.message);
+      const statusCode = error.response?.status;
+      const errorMessage = statusCode === 404
+        ? 'ยังไม่มีข้อมูลเพียงพอสำหรับการวิเคราะห์ AI'
+        : error.response?.data?.error || 'ไม่สามารถเชื่อมต่อบริการ AI ได้ในขณะนี้';
+
+      setAiRecommendations([]);
+      setAiRecommendationError(errorMessage);
+      setAiStatus({
+        active: true,
+        connected: false,
+        loading: false,
+        lastUpdated: null,
+        mode: statusCode === 404 ? 'fallback' : 'error',
+        engine: null,
+        reason: errorMessage
+      });
+    } finally {
+      setAiStatus((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -3009,7 +3070,7 @@ const Dashboard = () => {
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex flex-wrap items-center justify-between mb-2 gap-2">
                       <h4 className="text-indigo-900 font-semibold text-sm border-b border-indigo-200 pb-1 flex items-center space-x-2">
                         <span>🤖</span>
                         <span>
@@ -3038,6 +3099,18 @@ const Dashboard = () => {
                             ใช้คำแนะนำสำรองชั่วคราว
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={fetchAiInsights}
+                          disabled={aiStatus.loading}
+                          className={`text-[11px] font-semibold px-3 py-1 rounded-lg border transition-colors ${
+                            aiStatus.loading
+                              ? 'bg-indigo-100 text-indigo-400 border-indigo-100 cursor-not-allowed'
+                              : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                          }`}
+                        >
+                          {aiStatus.loading ? 'กำลังประมวลผล...' : 'คำแนะนำจาก AI (Gemini 2.5 Flash)'}
+                        </button>
                       </div>
                     </div>
 
