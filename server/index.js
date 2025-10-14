@@ -818,7 +818,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Check if user exists
     const existingUsers = await db.query(
-      'SELECT user_id FROM users WHERE username = $1 OR email = $2',
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
       [username, email]
     );
 
@@ -832,11 +832,11 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Insert user
     const result = await db.query(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING user_id',
+      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
       [username, email, passwordHash]
     );
 
-    const userId = result.rows[0].user_id;
+    const userId = result.rows[0].id;
 
     // Insert profile data if provided
     if (profile) {
